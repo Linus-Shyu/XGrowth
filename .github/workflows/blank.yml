@@ -3,12 +3,12 @@ name: bun scheduled tweet
 on:
   workflow_dispatch:
   # Schedules are intentionally omitted in the public template.
-  # Uncomment after secrets are configured:
+  # Uncomment after secrets are configured (timezone-locked ZH/EN traffic windows):
   # schedule:
-  #   - cron: "0 12 * * *"   # ZH evening (Beijing 20:00)
-  #   - cron: "0 13 * * *"   # EN window
-  #   - cron: "0 15 * * *"
-  #   - cron: "0 17 * * *"
+  #   - cron: "0 12 * * *"   # ZH China evening Beijing 20:00
+  #   - cron: "0 13 * * *"   # EN US East morning ~09:00 EDT
+  #   - cron: "0 16 * * *"   # EN US East lunch ~12:00 EDT
+  #   - cron: "0 21 * * *"   # EN US East evening / West afternoon
 
 permissions:
   contents: write
@@ -86,8 +86,8 @@ jobs:
       TWEET_FIRST_LANGUAGE: ${{ vars.TWEET_FIRST_LANGUAGE || 'en' }}
       TWEET_PEAK_POSTING_ENABLED: ${{ vars.TWEET_PEAK_POSTING_ENABLED || 'true' }}
       TWEET_PEAK_ZH_UTC_HOURS: ${{ vars.TWEET_PEAK_ZH_UTC_HOURS || '12' }}
-      TWEET_PEAK_EN_UTC_HOURS: ${{ vars.TWEET_PEAK_EN_UTC_HOURS || '13,15,17' }}
-      TWEET_PEAK_UTC_HOURS: ${{ vars.TWEET_PEAK_UTC_HOURS || '12,13,15,17' }}
+      TWEET_PEAK_EN_UTC_HOURS: ${{ vars.TWEET_PEAK_EN_UTC_HOURS || '13,16,21' }}
+      TWEET_PEAK_UTC_HOURS: ${{ vars.TWEET_PEAK_UTC_HOURS || '12,13,16,21' }}
       TWEET_HASHTAGS_ENABLED: ${{ vars.TWEET_HASHTAGS_ENABLED || 'true' }}
       TWEET_HASHTAG_COUNT: ${{ vars.TWEET_HASHTAG_COUNT || '2' }}
       TWEET_HASHTAG_PROMPT: ${{ vars.TWEET_HASHTAG_PROMPT }}

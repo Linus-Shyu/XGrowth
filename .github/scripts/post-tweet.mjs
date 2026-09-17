@@ -670,22 +670,24 @@ function tweetLanguageMode() {
 }
 
 function peakZhUtcHours() {
-  // China evening prime: Beijing 20:00. Keep ZH off EN 13-17 UTC windows.
+  // China evening prime only: Beijing 20:00 (UTC+8). Keep ZH off EN windows.
   return parseUtcHourList("TWEET_PEAK_ZH_UTC_HOURS", "12");
 }
 
 function peakEnUtcHours() {
-  // Data-backed EN windows around 13-17 UTC.
-  return parseUtcHourList("TWEET_PEAK_EN_UTC_HOURS", "13,15,17");
+  // US English traffic stack (EDT ≈ UTC-4):
+  // 13 = 09:00 ET morning, 16 = 12:00 ET lunch, 21 = 17:00 ET / 14:00 PT.
+  return parseUtcHourList("TWEET_PEAK_EN_UTC_HOURS", "13,16,21");
 }
 
 function peakRegionLabel(hour) {
   const normalized = Number(hour);
   if (!Number.isInteger(normalized)) return null;
-  if (peakZhUtcHours().includes(normalized)) return "China";
-  if (normalized === 0) return "US East evening";
+  if (peakZhUtcHours().includes(normalized)) return "China evening";
+  if (normalized === 13) return "US East morning";
   if (normalized === 16) return "US East lunch";
-  if (normalized === 19) return "US West lunch";
+  if (normalized === 21) return "US East evening commute / West afternoon";
+  if (normalized === 0 || normalized === 1) return "US East evening";
   if (peakEnUtcHours().includes(normalized)) return "US English peak";
   return null;
 }
@@ -825,7 +827,16 @@ async function resolveAlternateTweetLanguage(history) {
   return languageProfile(first);
 }
 
-async function resolveNextTweetLanguage(history, utcHour = new Date().getUTCHours()) {
+async function resolveNextTweetLanguage(history, utcHour = new Date().getUTCHours(), forcedCode = null) {
+  const forced = normalizeLanguageCode(forcedCode);
+  if (forced) {
+    const region = peakRegionLabel(utcHour);
+    console.log(
+      `Forced timezone language: ${forced}${region ? ` (${region})` : ""} at UTC ${String(utcHour).padStart(2, "0")}:00.`,
+    );
+    return languageProfile(forced);
+  }
+
   const mode = tweetLanguageMode();
 
   if (mode === "fixed") {
@@ -6700,14 +6711,14 @@ function buildLanguageTracks(state, insights = {}, now = new Date().toISOString(
       id: "zh",
       label: "ZH",
       locale: "zh-CN",
-      windowLabel: "China evening prime",
+      windowLabel: "China evening prime (Beijing 20:00)",
       utcHours: peakZhUtcHours(),
     },
     {
       id: "en",
       label: "EN",
       locale: "en",
-      windowLabel: "EU afternoon + US lunch/evening",
+      windowLabel: "US East morning + lunch + evening commute",
       utcHours: peakEnUtcHours(),
     },
   ];
@@ -22425,7 +22436,11 @@ async function main() {
   const history = fixedText ? [] : await readTweetHistory();
   const plannedLanguage = fixedText
     ? languageProfile(normalizeLanguageCode(optionalEnv("TWEET_LANGUAGE", "en")) || "en")
-    : await resolveNextTweetLanguage(history, languageUtcHour);
+    : await resolveNextTweetLanguage(history, languageUtcHour, peakWindow.languageCode);
+  console.log(
+    `Language plan: ${plannedLanguage.code} for UTC ${String(languageUtcHour).padStart(2, "0")}:00` +
+      `${peakWindow.languageCode ? ` (slot locked ${peakWindow.languageCode})` : ""}.`,
+  );
   const analyticsState = await readTweetAnalytics();
   let performanceInsights = deriveAnalyticsInsights(analyticsState);
   const usageState = await readXApiUsageState();

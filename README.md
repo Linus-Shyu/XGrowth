@@ -96,11 +96,11 @@ Copy cron blocks from the README appendix (or your private runner) into:
 - `.github/workflows/blank.yml` — posting windows  
 - `.github/workflows/growth-maintenance.yml` — dashboard + metrics
 
-Recommended posting windows (UTC):
+Recommended posting windows (UTC) — language is locked to each slot:
 
 ```text
-ZH: 12
-EN: 13, 15, 17
+ZH: 12          # Beijing 20:00 evening prime
+EN: 13, 16, 21  # US East morning / lunch / evening commute
 ```
 
 ### 5. Run self-tests locally
