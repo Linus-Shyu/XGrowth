@@ -150,6 +150,16 @@ async function ensureParentDirectory(filePath) {
   mkdirSync(directory, { recursive: true });
 }
 
+async function writeTextFile(filePath, content) {
+  await ensureParentDirectory(filePath);
+  if (typeof Bun !== "undefined") {
+    await Bun.write(filePath, content);
+    return;
+  }
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(filePath, content);
+}
+
 async function persistXRefreshToken(refreshToken) {
   const normalized = compactSecret(refreshToken);
   const outputFile = optionalEnv("X_REFRESH_TOKEN_OUT_FILE");
@@ -544,9 +554,10 @@ function selectContentFormats({
   if (bandit?.rankedFormatIds?.length || routerIds.length || opportunityIds.length || strategyIds.length) {
     const byId = new Map(formats.map((format) => [format.id, format]));
     const selected = [];
+    // Self-evolving strategy ranks first so daily winners beat the static base mix.
     const rankedIds = [
-      allocationPick?.id,
       ...strategyIds,
+      allocationPick?.id,
       growthStrategy?.exploreFormatId || optionalEnv("TWEET_GROWTH_EXPLORE_FORMAT_ID", "brutal_truth"),
       ...opportunityIds,
       ...routerIds,
@@ -1206,21 +1217,33 @@ class XCreditsDepletedError extends Error {
   }
 }
 
+function xApiCreditsCircuitTtlHours() {
+  return numberEnv("X_API_CREDITS_CIRCUIT_TTL_HOURS", 24, 1, 168);
+}
+
+function endpointCreditsFailureMs(value = {}, usage = {}) {
+  return (
+    parseTimestampMs(value?.lastFailureAt) ||
+    parseTimestampMs(value?.lastCalledAt) ||
+    // Summarized usage snapshots sometimes keep lastStatus=402 but drop per-call
+    // timestamps; fall back to the usage ledger clock so the circuit still trips.
+    parseTimestampMs(usage?.updatedAt)
+  );
+}
+
 function evaluateXCreditsCircuit(usage = {}, now = new Date()) {
   if (!xApiCreditsCircuitBreakerEnabled()) {
     return { active: false, reason: "Credits circuit breaker disabled." };
   }
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now || "");
   const currentMs = Number.isFinite(nowMs) ? nowMs : Date.now();
-  const ttlHours = numberEnv("X_API_CREDITS_CIRCUIT_TTL_HOURS", 24, 1, 168);
+  const ttlHours = xApiCreditsCircuitTtlHours();
   let latest = null;
 
   for (const [endpoint, value] of Object.entries(usage?.endpoints || {})) {
     const status = normalizedStatusCode(value?.lastStatus);
     if (status !== 402 && classifyXApiCooldownStatus(status) !== "credits_depleted") continue;
-    const failureMs =
-      parseTimestampMs(value?.lastFailureAt) ||
-      parseTimestampMs(value?.lastCalledAt);
+    const failureMs = endpointCreditsFailureMs(value, usage);
     if (!failureMs) continue;
     if (currentMs - failureMs > ttlHours * 3600 * 1000) continue;
     const candidate = {
@@ -1266,8 +1289,9 @@ function evaluateXApiCooldown(usage = {}, now = new Date()) {
     if (!kind) continue;
 
     const lastFailureMs =
-      parseTimestampMs(value?.lastFailureAt) ||
-      parseTimestampMs(value?.lastCalledAt);
+      kind === "credits_depleted"
+        ? endpointCreditsFailureMs(value, usage)
+        : parseTimestampMs(value?.lastFailureAt) || parseTimestampMs(value?.lastCalledAt);
     if (!lastFailureMs) continue;
 
     const cooldownMinutes = xApiCooldownMinutesForStatus(status);
@@ -1289,6 +1313,24 @@ function evaluateXApiCooldown(usage = {}, now = new Date()) {
 
     if (!active || Date.parse(candidate.until) > Date.parse(active.until)) {
       active = candidate;
+    }
+  }
+
+  if (!active) {
+    const creditsCircuit = evaluateXCreditsCircuit(usage, now instanceof Date ? now : new Date(now || Date.now()));
+    if (creditsCircuit.active) {
+      active = {
+        active: true,
+        reasonCode: "credits_depleted",
+        severity: "danger",
+        endpoint: creditsCircuit.endpoint || null,
+        status: creditsCircuit.status || 402,
+        since: creditsCircuit.since || null,
+        until: creditsCircuit.until || null,
+        remainingMinutes: Math.max(1, Math.ceil((Number(creditsCircuit.remainingHours) || 1) * 60)),
+        cooldownMinutes: xApiCreditsCircuitTtlHours() * 60,
+        readGate: "closed",
+      };
     }
   }
 
@@ -1910,6 +1952,55 @@ function ensureTweetHashtags(text, story, language = null, performanceInsights =
   return trimTweet(`${safeBody}\n${tagLine}`);
 }
 
+function openSourcePromoEnabled() {
+  if (optionalEnv("TWEET_SELF_TEST")) return false;
+  return isTruthy(optionalEnv("TWEET_OSS_PROMO_ENABLED", "true"));
+}
+
+function openSourcePromoUrl() {
+  return optionalEnv("TWEET_OSS_PROMO_URL", "github.com/Linus-Shyu/XGrowth").replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+function openSourcePromoAllowedLanguage(language = null) {
+  const configured = listEnv("TWEET_OSS_PROMO_LANGUAGES");
+  if (!configured.length) return true;
+  const code = String(language?.code || language || "en").toLowerCase();
+  return configured.map((value) => value.toLowerCase()).includes(code);
+}
+
+function shouldAttachOpenSourcePromo({ score = null, language = null, seed = "" } = {}) {
+  if (!openSourcePromoEnabled()) return false;
+  if (!openSourcePromoAllowedLanguage(language)) return false;
+  const minScore = numberEnv("TWEET_OSS_PROMO_MIN_SCORE", 170, 0, 1000);
+  if (score != null && Number.isFinite(Number(score)) && Number(score) < minScore) return false;
+  const probability = numberEnv("TWEET_OSS_PROMO_PROBABILITY", 0.28, 0, 1);
+  if (probability <= 0) return false;
+  if (probability >= 1) return true;
+  const unit = hashStringToUnit(`oss-promo:${seed || new Date().toISOString().slice(0, 13)}`);
+  return unit < probability;
+}
+
+function maybeAppendOpenSourcePromo(text, { score = null, language = null, seed = "" } = {}) {
+  // Keep newline before the promo footer. Do not run trimTweet() on the final
+  // string — it collapses whitespace and would glue the link onto the last line.
+  const trimmed = trimTweet(text);
+  if (!shouldAttachOpenSourcePromo({ score, language, seed })) return trimmed;
+
+  const promo = openSourcePromoUrl();
+  if (!promo) return trimmed;
+  if (new RegExp(escapeRegExp(promo), "i").test(trimmed)) return trimmed;
+  if (/https?:\/\/|github\.com\//i.test(trimmed)) return trimmed;
+
+  const suffix = `\n${promo}`;
+  const maxBody = MAX_TWEET_LENGTH - countCharacters(suffix);
+  if (maxBody < 40) return trimmed;
+  const body =
+    countCharacters(trimmed) > maxBody
+      ? `${Array.from(trimmed).slice(0, Math.max(0, maxBody - 1)).join("").trimEnd()}…`
+      : trimmed;
+  return `${body}${suffix}`;
+}
+
 const AUDIENCE_SEGMENTS = [
   {
     id: "ai_platform",
@@ -2259,8 +2350,7 @@ async function persistGrowthStrategy(strategy) {
   // Only write the runtime cache here. The maintenance workflow copies it into
   // reports/ after rebase so the git worktree stays clean for commit/push.
   const file = growthStrategyFile();
-  await ensureParentDirectory(file);
-  await Bun.write(file, `${JSON.stringify(strategy, null, 2)}\n`);
+  await writeTextFile(file, `${JSON.stringify(strategy, null, 2)}\n`);
   console.log(`Wrote self-evolving growth strategy to ${file}.`);
 }
 
@@ -2281,12 +2371,11 @@ async function appendGrowthEvolutionLog(strategy) {
   };
   const line = `${JSON.stringify(row)}\n`;
   const file = growthEvolutionFile();
-  await ensureParentDirectory(file);
   const existing = await readTextFileIfExists(file);
   const kept = existing
     ? existing.split("\n").filter(Boolean).slice(-89).join("\n")
     : "";
-  await Bun.write(file, kept ? `${kept}\n${line}` : line);
+  await writeTextFile(file, kept ? `${kept}\n${line}` : line);
 }
 
 function recentMeasuredRecords(state, hours = 24 * 14, now = Date.now()) {
@@ -5282,7 +5371,7 @@ async function fetchAccountSnapshot(accessToken) {
 }
 
 function accountSnapshotMaxAgeHours() {
-  return numberEnv("TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS", 12, 0, 168);
+  return numberEnv("TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS", 6, 0, 168);
 }
 
 function latestAccountSnapshot(state = emptyTweetAnalyticsState()) {
@@ -7370,10 +7459,46 @@ function buildDashboardOpportunities({ insights, drafts, actions, state }) {
     .map((item, index) => ({ ...item, priority: index + 1 }));
 }
 
+function operatorFollowerOverride() {
+  const raw = optionalEnv("TWEET_FOLLOWERS_OVERRIDE");
+  if (!raw) return null;
+  const followers = Number(raw);
+  if (!Number.isFinite(followers) || followers < 0) return null;
+  return Math.trunc(followers);
+}
+
 function latestFollowerCount(state) {
+  const override = operatorFollowerOverride();
+  if (override != null) return override;
   const latestSnapshot = (state.accountSnapshots || [])[state.accountSnapshots.length - 1] || null;
   const followers = Number(latestSnapshot?.publicMetrics?.followers_count);
   return Number.isFinite(followers) ? followers : null;
+}
+
+function ensureOperatorFollowerSnapshot(state, now = new Date()) {
+  const override = operatorFollowerOverride();
+  if (override == null) return state;
+  const snapshots = Array.isArray(state?.accountSnapshots) ? [...state.accountSnapshots] : [];
+  const latest = snapshots[snapshots.length - 1] || null;
+  const latestFollowers = Number(latest?.publicMetrics?.followers_count);
+  const checkedAt = now instanceof Date ? now.toISOString() : new Date(now || Date.now()).toISOString();
+  if (Number.isFinite(latestFollowers) && latestFollowers === override && latest?.source === "operator_confirmed") {
+    return state;
+  }
+  snapshots.push({
+    checkedAt,
+    userId: latest?.userId || null,
+    username: latest?.username || null,
+    source: "operator_confirmed",
+    publicMetrics: {
+      ...(latest?.publicMetrics || {}),
+      followers_count: override,
+    },
+  });
+  return {
+    ...state,
+    accountSnapshots: snapshots.slice(-integerEnv("TWEET_ACCOUNT_SNAPSHOT_MAX", 60, 5, 365)),
+  };
 }
 
 function nextFollowerMilestone(current, target) {
@@ -15020,11 +15145,12 @@ function sanitizeDashboardVocabulary(value, key = "") {
 
 function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, growthStrategy = null }) {
   const now = new Date().toISOString();
+  state = ensureOperatorFollowerSnapshot(state, now);
   const last24h = recordsSince(state, 24, now);
   const last7d = recordsSince(state, 24 * 7, now);
   const delta = followerDelta(state);
   const latestSnapshot = (state.accountSnapshots || [])[state.accountSnapshots.length - 1] || null;
-  const latestFollowers = Number(latestSnapshot?.publicMetrics?.followers_count);
+  const latestFollowers = latestFollowerCount(state);
   const drafts = dailyReplyDrafts(state);
   const searchLinks = manualReplySearchLinks();
   const actions = buildManualReplyActions(drafts);
@@ -15502,7 +15628,18 @@ function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, 
     now,
   });
   const apiCap = monthlyBudgetUsd();
-  const apiSpend = Number(usage?.totalEstimatedUsd) || 0;
+  const apiSpend = Math.max(
+    Number(usage?.totalEstimatedUsd) || 0,
+    Number(budgetState?.spentUsd) || 0,
+  );
+  const creditsCircuit = evaluateXCreditsCircuit(usage, new Date(now));
+  const creditsDepleted =
+    Boolean(creditsCircuit.active) ||
+    (Boolean(cooldown?.active) && cooldown?.reasonCode === "credits_depleted");
+  const estimatedRemaining = Math.max(0, apiCap - apiSpend);
+  const estimatedSafeRemaining = Math.max(0, apiCap * budgetSafetyRatio() - apiSpend);
+  const availableRemaining = creditsDepleted ? 0 : estimatedRemaining;
+  const availableSafeRemaining = creditsDepleted ? 0 : estimatedSafeRemaining;
 
   const dashboardData = {
     version: 1,
@@ -15612,8 +15749,26 @@ function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, 
       spend: roundUsd(apiSpend),
       cap: apiCap,
       safeCap: roundUsd(apiCap * budgetSafetyRatio()),
-      remaining: roundUsd(Math.max(0, apiCap - apiSpend)),
-      safeRemaining: roundUsd(Math.max(0, apiCap * budgetSafetyRatio() - apiSpend)),
+      // `remaining` is what operators can still spend. When X returns credits
+      // depleted, force $0 even if the local estimated ledger still has headroom.
+      remaining: roundUsd(availableRemaining),
+      safeRemaining: roundUsd(availableSafeRemaining),
+      estimatedRemaining: roundUsd(estimatedRemaining),
+      estimatedSafeRemaining: roundUsd(estimatedSafeRemaining),
+      creditsDepleted,
+      ledgerSource: "local_estimated_usage",
+      ledgerNote: creditsDepleted
+        ? "X credits depleted; available remaining forced to $0. Spend/cap below are the local estimated ledger, not the X console balance."
+        : "Spend/cap/remaining come from the local estimated ledger, not the live X billing console.",
+      creditsCircuit: {
+        active: Boolean(creditsCircuit.active),
+        endpoint: creditsCircuit.endpoint || null,
+        status: creditsCircuit.status || null,
+        since: creditsCircuit.since || null,
+        until: creditsCircuit.until || null,
+        remainingHours: creditsCircuit.remainingHours || 0,
+        reason: creditsCircuit.reason || null,
+      },
       statusTriage,
       cooldown,
       days: xApiDailySeries(usage, integerEnv("DASHBOARD_API_SERIES_DAYS", 14, 7, 31)),
@@ -16524,26 +16679,23 @@ async function writeGrowthReport() {
   }
   const report = buildGrowthReport({ state, insights, usage, budgetState, openAIUsage, growthStrategy });
   const file = optionalEnv("GROWTH_REPORT_FILE", ".github/runtime/growth-report.md");
-  await ensureParentDirectory(file);
-  await Bun.write(file, report);
+  await writeTextFile(file, report);
   console.log(`Wrote growth report to ${file}.`);
 
   const dailyReplyReport = buildDailyReplyReport({ state, usage, budgetState });
   const dailyReplyFile = optionalEnv("DAILY_REPLY_FILE", ".github/runtime/daily-replies.md");
-  await ensureParentDirectory(dailyReplyFile);
-  await Bun.write(dailyReplyFile, dailyReplyReport);
+  await writeTextFile(dailyReplyFile, dailyReplyReport);
   console.log(`Wrote daily route plan to ${dailyReplyFile}.`);
 
   const dashboardData = buildDashboardData({ state, insights, usage, budgetState, openAIUsage, growthStrategy });
   const dashboardDataFile = optionalEnv("DASHBOARD_DATA_FILE", ".github/runtime/dashboard-data.json");
-  await ensureParentDirectory(dashboardDataFile);
-  await Bun.write(dashboardDataFile, `${JSON.stringify(dashboardData, null, 2)}\n`);
+  await writeTextFile(dashboardDataFile, `${JSON.stringify(dashboardData, null, 2)}\n`);
   console.log(`Wrote dashboard data to ${dashboardDataFile}.`);
 
   const summaryFile = optionalEnv("GITHUB_STEP_SUMMARY");
   if (summaryFile) {
     const existing = await readTextFileIfExists(summaryFile);
-    await Bun.write(summaryFile, `${existing}${report}\n`);
+    await writeTextFile(summaryFile, `${existing}${report}\n`);
   }
   return report;
 }
@@ -20308,6 +20460,17 @@ async function composeTweet({
   });
   logTweetCandidates(candidates, selectedCandidate);
 
+  const promotedText = maybeAppendOpenSourcePromo(selectedCandidate.text, {
+    score: selectedCandidate.score,
+    language,
+    seed: `${selectedCandidate.templateId || "tweet"}:${story?.id || story?.title || story?.url || ""}:${new Date().toISOString().slice(0, 10)}`,
+  });
+  if (promotedText !== selectedCandidate.text) {
+    selectedCandidate.text = promotedText;
+    selectedCandidate.openSourcePromoAttached = true;
+    console.log(`Attached open-source promo footer: ${openSourcePromoUrl()}`);
+  }
+
   return {
     tweet: selectedCandidate.text,
     selectedStory: story,
@@ -21965,8 +22128,176 @@ function dashboardOnlyMaintenanceMode(mode = maintenanceMode()) {
   return ["dashboard_only", "report_only", "cached_report"].includes(mode);
 }
 
+function liveSnapshotMaintenanceMode(mode = maintenanceMode()) {
+  return ["live_snapshot", "account_snapshot", "live_dashboard"].includes(mode);
+}
+
 function markDashboardTelemetryCached(reason) {
   process.env.DASHBOARD_CACHED_TELEMETRY_REASON = reason;
+}
+
+function clearDashboardTelemetryCached() {
+  delete process.env.DASHBOARD_CACHED_TELEMETRY_REASON;
+}
+
+async function evaluateLiveSnapshotReadBudget() {
+  const usage = await readXApiUsageState();
+  const cooldown = evaluateXApiCooldown(usage);
+  if (cooldown.active) {
+    return {
+      allowed: false,
+      category: "cooldown",
+      projectedCost: 0,
+      spent: Number(usage.totalEstimatedUsd) || 0,
+      safeCap: monthlyBudgetUsd() * budgetSafetyRatio(),
+      cooldown,
+      reason: cooldown.reason,
+    };
+  }
+
+  const state = await readTweetAnalytics();
+  const snapshotDue =
+    isTruthy(optionalEnv("TWEET_ACCOUNT_SNAPSHOT_ENABLED", "true")) &&
+    shouldRefreshAccountSnapshot(state);
+  const metricsEnabled = isTruthy(optionalEnv("TWEET_LIVE_SNAPSHOT_METRICS_ENABLED", "false"));
+  let projectedCost = 0;
+  if (snapshotDue) projectedCost += estimatedEndpointCost("USER_ME_LOOKUP");
+  if (metricsEnabled) {
+    const maxPosts = integerEnv("TWEET_LIVE_SNAPSHOT_METRICS_MAX_POSTS", 2, 0, 20);
+    const due = state.tweets.filter((record) => record.id && shouldRefreshTweetMetrics(record)).slice(0, maxPosts);
+    if (due.length) projectedCost += estimatedEndpointCost("TWEET_METRICS_LOOKUP");
+  }
+
+  return {
+    allowed: true,
+    category: snapshotDue || (metricsEnabled && projectedCost > 0) ? "live_snapshot" : "cache_fresh",
+    projectedCost: Number(projectedCost.toFixed(3)),
+    spent: Number(usage.totalEstimatedUsd) || 0,
+    safeCap: monthlyBudgetUsd() * budgetSafetyRatio(),
+    cooldown,
+    reason: snapshotDue
+      ? `Live snapshot will refresh USER_ME_LOOKUP (~$${estimatedEndpointCost("USER_ME_LOOKUP").toFixed(3)}).`
+      : "Account snapshot cache is still fresh; rebuild dashboard from cache only.",
+  };
+}
+
+async function refreshLiveSnapshotTelemetry(accessToken) {
+  if (!tweetAnalyticsEnabled()) return { accountRefreshed: false, metricsRefreshed: 0 };
+
+  const state = await readTweetAnalytics();
+  let accountRefreshed = false;
+  let metricsRefreshed = 0;
+
+  const accountSnapshotEnabled = isTruthy(optionalEnv("TWEET_ACCOUNT_SNAPSHOT_ENABLED", "true"));
+  const accountSnapshotDue = accountSnapshotEnabled && shouldRefreshAccountSnapshot(state);
+  if (accountSnapshotDue) {
+    const accountSnapshot = await fetchAccountSnapshot(accessToken);
+    state.accountSnapshots = [...(state.accountSnapshots || []), accountSnapshot].slice(-100);
+    accountRefreshed = true;
+    const followers = accountSnapshot.publicMetrics?.followers_count;
+    if (followers != null) console.log(`Live snapshot followers: ${followers}.`);
+  } else if (accountSnapshotEnabled) {
+    const latest = latestAccountSnapshot(state);
+    const ageHours = accountSnapshotAgeHours(state);
+    const maxAgeHours = accountSnapshotMaxAgeHours();
+    const followers = latest?.publicMetrics?.followers_count;
+    console.log(
+      `Live snapshot cache hit: ${followers == null ? "followers unknown" : `${followers} followers`}, age=${formatNumber(ageHours, 1)}h / ${formatNumber(maxAgeHours, 1)}h TTL.`,
+    );
+  }
+
+  if (isTruthy(optionalEnv("TWEET_LIVE_SNAPSHOT_METRICS_ENABLED", "false"))) {
+    const maxPosts = integerEnv("TWEET_LIVE_SNAPSHOT_METRICS_MAX_POSTS", 2, 0, 20);
+    const dueRecords = state.tweets
+      .filter((record) => record.id && shouldRefreshTweetMetrics(record))
+      .slice(0, maxPosts);
+    if (dueRecords.length) {
+      const ids = dueRecords.map((record) => record.id);
+      const metrics = await fetchTweetMetrics(accessToken, ids);
+      const byId = new Map(metrics.map((tweet) => [String(tweet.id), tweet]));
+      for (const record of dueRecords) {
+        const tweet = byId.get(String(record.id));
+        if (!tweet) continue;
+        const snapshot = metricsSnapshotFromTweet(tweet);
+        record.latestMetrics = snapshot;
+        record.metricsSnapshots = [...(record.metricsSnapshots || []), snapshot].slice(-24);
+        record.updatedAt = new Date().toISOString();
+        metricsRefreshed += 1;
+      }
+    }
+  }
+
+  await persistTweetAnalytics(state);
+  return { accountRefreshed, metricsRefreshed };
+}
+
+async function runLiveSnapshotMaintenance() {
+  console.log(
+    "Running live_snapshot maintenance: refresh account followers when due, rebuild dashboard, sync-ready output. Skips hotspot/auto-reply and ignores runway guard for this cheap read.",
+  );
+
+  if (dryRunEnabled()) {
+    markDashboardTelemetryCached("dry_run");
+    await writeGrowthReport();
+    console.log("Live snapshot dry run complete; skipped X reads.");
+    return;
+  }
+
+  const readBudget = await evaluateLiveSnapshotReadBudget();
+  if (!readBudget.allowed) {
+    console.warn(`Skipping live snapshot reads: ${readBudget.reason}`);
+    markDashboardTelemetryCached(readBudget.category === "cooldown" ? "x_api_cooldown" : "x_api_budget_guard");
+    await recordRunEvent("skip", `live snapshot skip: ${readBudget.reason}`, {
+      category: readBudget.category || "budget",
+      projectedCost: readBudget.projectedCost,
+      spent: readBudget.spent,
+      safeCap: readBudget.safeCap,
+      cooldown: readBudget.cooldown || null,
+    });
+    await writeGrowthReport();
+    console.log("Live snapshot maintenance complete with cached telemetry.");
+    return;
+  }
+
+  if (readBudget.projectedCost > 0) {
+    console.log(`Live snapshot budget check passed: ~$${readBudget.projectedCost.toFixed(3)} projected.`);
+  } else {
+    clearDashboardTelemetryCached();
+    markDashboardTelemetryCached("live_snapshot_cache_fresh");
+  }
+
+  let accessToken = null;
+  if (readBudget.projectedCost > 0) {
+    try {
+      accessToken = await getXAccessTokenWithFallback();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await appendGitHubOutput("x_auth_unavailable", "true");
+      console.warn(`X access token unavailable for live snapshot: ${message}`);
+      markDashboardTelemetryCached("x_auth_unavailable");
+      await recordRunEvent("maintenance_degraded", message, { category: "x_auth" });
+    }
+  }
+
+  if (accessToken && readBudget.projectedCost > 0) {
+    try {
+      const result = await refreshLiveSnapshotTelemetry(accessToken);
+      clearDashboardTelemetryCached();
+      console.log(
+        `Live snapshot refreshed: account=${result.accountRefreshed ? "yes" : "no"}, metrics=${result.metricsRefreshed}.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Live snapshot X refresh failed; rebuilding from cache: ${message}`);
+      markDashboardTelemetryCached("live_snapshot_failed");
+      await recordRunEvent("maintenance_degraded", message, { category: "x_api" });
+    }
+  } else if (readBudget.projectedCost > 0) {
+    console.warn("Continuing live snapshot with cached analytics only.");
+  }
+
+  await writeGrowthReport();
+  console.log("Live snapshot maintenance complete.");
 }
 
 async function runGrowthMaintenance() {
@@ -21978,6 +22309,11 @@ async function runGrowthMaintenance() {
     );
     await writeGrowthReport();
     console.log("Dashboard-only maintenance complete.");
+    return;
+  }
+
+  if (liveSnapshotMaintenanceMode(mode)) {
+    await runLiveSnapshotMaintenance();
     return;
   }
 
@@ -22007,6 +22343,13 @@ async function runGrowthMaintenance() {
       cooldown: readBudget.cooldown || null,
       runway: readBudget.runway || null,
     });
+    // Cheap follower refresh still keeps the public dashboard alive even when
+    // the full metrics_report path is runway-blocked.
+    if (isTruthy(optionalEnv("TWEET_METRICS_FALLBACK_LIVE_SNAPSHOT", "false"))) {
+      console.log("Falling back to live_snapshot after full metrics read budget skip.");
+      await runLiveSnapshotMaintenance();
+      return;
+    }
     await writeGrowthReport();
     console.log(`Growth maintenance complete with cached telemetry due to ${skipReason}.`);
     return;

@@ -46,6 +46,9 @@ If you want a **production-grade, inspectable growth lab** that runs on GitHub A
 - **DeepSeek / OpenAI-compatible** generation with quality gates
 - **Self-evolving strategy** (`reports/growth-strategy.json`) — mutations freeze until `n≥10` measured samples
 - **Media ROI gate** (images off by default until lift is proven)
+- **Occasional OSS promo footer** — high-scoring posts can append `github.com/Linus-Shyu/XGrowth` (~28%, score ≥ 170)
+- **Free dashboard sync** — `dashboard_only` rebuilds + publishes `data.json` with **0 X reads**; paid `live_snapshot` / `metrics_report` are manual
+- **Credits-aligned API remaining** — when X returns `402 credits depleted`, available remaining is forced to `$0` while the local ledger stays visible
 - **Growth maintenance**: metrics backfill, manual reply drafts, dashboard sync
 - **Self-tests in CI**: local fallback, cost governor, learning loop, hourly load, dashboard validator
 
@@ -166,6 +169,8 @@ docs/                # architecture notes
 | `TWEET_GROWTH_MIN_SAMPLES` | `10` | Stop fake “self-evolution” |
 | `TWEET_IMAGE_ENABLED` | `false` | No image spend until ROI exists |
 | `TWEET_AUTO_REPLY_*` | off / 0 | Credits go to posts + metrics |
+| `TWEET_OSS_PROMO_*` | on / ~28% / score≥170 | Occasional repo footer without burning reads |
+| `TWEET_MAINTENANCE_MODE` | `dashboard_only` | Free dashboard publish; paid modes are manual |
 | `X_API_CREDITS_CIRCUIT_BREAKER_ENABLED` | `true` | Survive real `402` |
 
 ---

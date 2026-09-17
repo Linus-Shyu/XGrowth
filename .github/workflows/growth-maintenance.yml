@@ -4,14 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Maintenance mode. dashboard_only uses cached data only; metrics_report refreshes X metrics and drafts."
+        description: "Maintenance mode. dashboard_only is free (cached only). live_snapshot/metrics_report spend X API credits."
         required: false
         default: dashboard_only
         type: choice
         options:
           - dashboard_only
+          - live_snapshot
           - metrics_report
-  # Schedules omitted in the public template. Enable after secrets + dashboard sync are configured.
+  # Schedules omitted in the public template. Enable after secrets + dashboard sync are configured:
+  # schedule:
+  #   - cron: "10 */2 * * *"   # free dashboard_only publish (0 X reads)
 
 permissions:
   contents: write
@@ -37,7 +40,6 @@ jobs:
       OPENAI_COST_INPUT_1K_USD: ${{ vars.OPENAI_COST_INPUT_1K_USD || '0' }}
       OPENAI_COST_OUTPUT_1K_USD: ${{ vars.OPENAI_COST_OUTPUT_1K_USD || '0' }}
       OPENAI_COST_REQUEST_USD: ${{ vars.OPENAI_COST_REQUEST_USD || '0' }}
-      TWEET_MAINTENANCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.schedule == '20 23 * * *' && 'metrics_report' || 'dashboard_only' }}
       TWEET_ANALYTICS_ENABLED: ${{ vars.TWEET_ANALYTICS_ENABLED || 'true' }}
       TWEET_ANALYTICS_FILE: .github/runtime/tweet-analytics.json
       TWEET_ANALYTICS_MAX_RECORDS: ${{ vars.TWEET_ANALYTICS_MAX_RECORDS }}
@@ -48,7 +50,10 @@ jobs:
       NEWS_RSS_SKIP_AFTER_FAILURES: ${{ vars.NEWS_RSS_SKIP_AFTER_FAILURES || '3' }}
       NEWS_RSS_HEALTH_PROBE_EVERY_HOURS: ${{ vars.NEWS_RSS_HEALTH_PROBE_EVERY_HOURS || '12' }}
       TWEET_ACCOUNT_SNAPSHOT_ENABLED: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_ENABLED || 'true' }}
-      TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '24' }}
+      TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '6' }}
+      TWEET_LIVE_SNAPSHOT_METRICS_ENABLED: ${{ vars.TWEET_LIVE_SNAPSHOT_METRICS_ENABLED || 'false' }}
+      TWEET_LIVE_SNAPSHOT_METRICS_MAX_POSTS: ${{ vars.TWEET_LIVE_SNAPSHOT_METRICS_MAX_POSTS || '2' }}
+      TWEET_METRICS_FALLBACK_LIVE_SNAPSHOT: ${{ vars.TWEET_METRICS_FALLBACK_LIVE_SNAPSHOT || 'false' }}
       TWEET_METRICS_MAX_POSTS: ${{ vars.TWEET_METRICS_MAX_POSTS || '5' }}
       TWEET_METRICS_MIN_AGE_MINUTES: ${{ vars.TWEET_METRICS_MIN_AGE_MINUTES || '60' }}
       TWEET_METRICS_MAX_AGE_DAYS: ${{ vars.TWEET_METRICS_MAX_AGE_DAYS || '30' }}
@@ -210,6 +215,9 @@ jobs:
 
       - name: Refresh metrics and write growth report
         id: maintenance
+        env:
+          # Default is free cache-only publish. Paid modes are manual workflow_dispatch only.
+          TWEET_MAINTENANCE_MODE: ${{ inputs.mode || 'dashboard_only' }}
         run: bun .github/scripts/post-tweet.mjs
 
       - name: Purge stale runtime cache after OAuth cache failure

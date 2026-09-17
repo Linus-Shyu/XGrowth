@@ -3,7 +3,12 @@ name: bun scheduled tweet
 on:
   workflow_dispatch:
   # Schedules are intentionally omitted in the public template.
-  # Add your own cron after configuring secrets — see README.
+  # Uncomment after secrets are configured:
+  # schedule:
+  #   - cron: "0 12 * * *"   # ZH evening (Beijing 20:00)
+  #   - cron: "0 13 * * *"   # EN window
+  #   - cron: "0 15 * * *"
+  #   - cron: "0 17 * * *"
 
 permissions:
   contents: write
@@ -86,6 +91,11 @@ jobs:
       TWEET_HASHTAGS_ENABLED: ${{ vars.TWEET_HASHTAGS_ENABLED || 'true' }}
       TWEET_HASHTAG_COUNT: ${{ vars.TWEET_HASHTAG_COUNT || '2' }}
       TWEET_HASHTAG_PROMPT: ${{ vars.TWEET_HASHTAG_PROMPT }}
+      TWEET_OSS_PROMO_ENABLED: ${{ vars.TWEET_OSS_PROMO_ENABLED || 'true' }}
+      TWEET_OSS_PROMO_URL: ${{ vars.TWEET_OSS_PROMO_URL || 'github.com/Linus-Shyu/XGrowth' }}
+      TWEET_OSS_PROMO_PROBABILITY: ${{ vars.TWEET_OSS_PROMO_PROBABILITY || '0.28' }}
+      TWEET_OSS_PROMO_MIN_SCORE: ${{ vars.TWEET_OSS_PROMO_MIN_SCORE || '170' }}
+      TWEET_OSS_PROMO_LANGUAGES: ${{ vars.TWEET_OSS_PROMO_LANGUAGES || '' }}
       TWEET_STYLE_PROMPT_ZH: ${{ vars.TWEET_STYLE_PROMPT_ZH }}
       TWEET_STYLE_PROMPT_EN: ${{ vars.TWEET_STYLE_PROMPT_EN }}
       TWEET_CANDIDATE_COUNT: ${{ vars.TWEET_CANDIDATE_COUNT || '4' }}
@@ -309,6 +319,35 @@ jobs:
           TWEET_SYNC_PATH: ${{ vars.TWEET_SYNC_PATH || 'tweets.jsonl' }}
           TWEET_SYNC_GITHUB_TOKEN: ${{ secrets.TWEET_SYNC_GITHUB_TOKEN }}
         run: bash .github/scripts/sync-tweet-archive.sh
+
+      - name: Refresh live dashboard after post
+        if: success()
+        env:
+          TWEET_MAINTENANCE_MODE: dashboard_only
+          TWEET_ACCOUNT_SNAPSHOT_ENABLED: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_ENABLED || 'true' }}
+          TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '6' }}
+          TWEET_LIVE_SNAPSHOT_METRICS_ENABLED: "false"
+          DASHBOARD_DATA_FILE: .github/runtime/dashboard-data.json
+          GROWTH_REPORT_FILE: .github/runtime/growth-report.md
+          DAILY_REPLY_FILE: .github/runtime/daily-replies.md
+          TWEET_ANALYTICS_FILE: .github/runtime/tweet-analytics.json
+          X_API_USAGE_FILE: .github/runtime/x-api-usage.json
+          X_API_BUDGET_FILE: .github/runtime/x-api-budget.json
+          OPENAI_USAGE_FILE: .github/runtime/openai-usage.json
+          TWEET_GROWTH_STRATEGY_FILE: .github/runtime/growth-strategy.json
+          GROWTH_EVOLUTION_FILE: .github/runtime/growth-evolution.jsonl
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Sync dashboard data to blog
+        if: success()
+        env:
+          DASHBOARD_DATA_FILE: .github/runtime/dashboard-data.json
+          DASHBOARD_SYNC_REPO: ${{ vars.DASHBOARD_SYNC_REPO || 'Linus-Shyu/Linus-Shyu.github.io' }}
+          DASHBOARD_SYNC_PATHS: ${{ vars.DASHBOARD_SYNC_PATHS || 'xbot-dashboard/data.json,docs/xbot-dashboard/data.json' }}
+          DASHBOARD_SYNC_REQUIRED: ${{ vars.DASHBOARD_SYNC_REQUIRED || 'false' }}
+          DASHBOARD_SYNC_GITHUB_TOKEN: ${{ secrets.DASHBOARD_SYNC_GITHUB_TOKEN }}
+          TWEET_SYNC_GITHUB_TOKEN: ${{ secrets.TWEET_SYNC_GITHUB_TOKEN }}
+        run: bash .github/scripts/sync-dashboard-to-blog.sh
 
       # Persist rotated X refresh tokens even when the tweet step fails later
       # (quality gate, media upload, etc.). Otherwise the GitHub secret goes stale
