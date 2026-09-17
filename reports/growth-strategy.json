@@ -1,0 +1,140 @@
+{
+  "version": 2,
+  "generatedAt": "2026-09-17T01:29:00.964Z",
+  "mode": "self_evolving_daily_traffic",
+  "status": "insufficient_recent_samples",
+  "source": "cached tweet analytics",
+  "zeroExtraXReads": true,
+  "estimatedXReadOps": 0,
+  "confidence": "low",
+  "baselineScore": 4.2,
+  "sampleCount": 22,
+  "formatWeights": {
+    "not_x_but_y": 1,
+    "second_order": 1,
+    "prediction": 1.08,
+    "operator_pain": 1,
+    "contrarian_cost": 1,
+    "sharp_question": 1,
+    "playbook": 1,
+    "decision_rule": 1,
+    "brutal_truth": 1,
+    "massive_value_drop": 1,
+    "myth_busting": 1,
+    "the_hard_way": 1
+  },
+  "exploreFormatId": "brutal_truth",
+  "dailyDigest": {
+    "utcDay": "2026-09-17",
+    "last24h": {
+      "posts": 0,
+      "measuredPosts": 0,
+      "impressions": 0,
+      "likes": 0,
+      "replies": 0,
+      "avgScore": 0
+    },
+    "last7d": {
+      "posts": 0,
+      "measuredPosts": 0,
+      "impressions": 0,
+      "likes": 0,
+      "replies": 0,
+      "avgScore": 0
+    },
+    "bestFormat": null,
+    "worstFormat": null,
+    "formatRows24h": [],
+    "formatRows7d": [],
+    "languageRows": [],
+    "winningHooks": [],
+    "losingHooks": [],
+    "baselineScore": 4.2
+  },
+  "evolution": {
+    "utcDay": "2026-09-17",
+    "frozen": true,
+    "parentGeneratedAt": "2026-09-16T01:29:41.291Z",
+    "mutations": [
+      {
+        "type": "wait",
+        "formatId": null,
+        "reason": "No measured posts in the last 24h; keep current weights."
+      }
+    ]
+  },
+  "promotedFormats": [
+    {
+      "id": "prediction",
+      "action": "promote",
+      "avgScore": 5,
+      "samples": 7,
+      "liftPct": 18.7
+    }
+  ],
+  "holdFormats": [],
+  "preferredHashtags": [
+    "Hardware",
+    "Cloud",
+    "DevTools",
+    "BigTech",
+    "AI"
+  ],
+  "blockedOpeners": [
+    {
+      "id": "decision_rule_for",
+      "pattern": "^(decision rule for|playbook for)\\b",
+      "reason": "Template opener became repetitive and too headline-adjacent."
+    },
+    {
+      "id": "zh_judgment_standard",
+      "pattern": "( 的判断标准很简单|真正的问题是：它减少了操作成本)",
+      "reason": "Chinese fallback opener reads like a template instead of a fresh take."
+    },
+    {
+      "id": "operator_cost_question",
+      "pattern": "raises the real question: does this reduce operator work",
+      "reason": "Repeated question framing underperforms as an opening line."
+    }
+  ],
+  "promptDirectives": [
+    "Never begin with 'Decision rule for ...' or repeat the article title as the subject.",
+    "Lead with one concrete company/product/entity and one non-obvious operator, user, platform, or market consequence.",
+    "Prefer a reusable take that invites replies; avoid summaries, headline rewrites, and generic hype.",
+    "Keep one controlled exploration slot for brutal_truth.",
+    "Language mode is unchanged; when writing en, make the first line sharper because that lane currently scores higher.",
+    "Use only high-signal hashtags from this set when tags are enabled: Hardware, Cloud, DevTools, BigTech, AI."
+  ],
+  "quality": {
+    "headlineSimilarityBlock": 0.62,
+    "headlineSimilarityWarn": 0.45,
+    "blockGenericHashtags": true,
+    "blockedFallbackAllowed": false,
+    "minSpecificity": "company_or_product_plus_consequence"
+  },
+  "nextAction": "Exploit prediction while keeping one controlled exploration candidate (brutal_truth).",
+  "recent7dScore": 0,
+  "recentSampleCount": 0,
+  "languageBias": {
+    "primary": "en",
+    "rows": [
+      {
+        "id": "en",
+        "action": "watch",
+        "avgScore": 4.4,
+        "samples": 12,
+        "liftPct": 4.9
+      },
+      {
+        "id": "zh",
+        "action": "watch",
+        "avgScore": 3.8,
+        "samples": 10,
+        "liftPct": -8.5
+      }
+    ],
+    "promptOnly": true,
+    "note": "Language mode stays timezone; this bias only shapes hook style in the prompt."
+  },
+  "repeatedFormulaicRecords": []
+}

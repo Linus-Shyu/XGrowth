@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.oauth.local.example
+.github/runtime/**
+!/.github/runtime/.gitkeep
+.DS_Store
+*.xcuserstate
+node_modules/
+.idea/
+.vscode/
+*.log

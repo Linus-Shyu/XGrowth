@@ -1,0 +1,103 @@
+# RSS/Atom URLs. One URL per line; commas and semicolons are also accepted.
+# Removed after live checks:
+# - https://blogs.microsoft.com/ai/feed/ (410 Gone)
+# - https://www.reddit.com/r/MachineLearning/.rss (429 Too Many Requests)
+# - https://www.reddit.com/r/artificial/.rss (frequent 429 Too Many Requests)
+# - https://importai.substack.com/feed (403 Forbidden in GitHub Actions)
+# - https://www.theregister.com/headlines.atom (403 Forbidden in GitHub Actions)
+
+# Chinese tech / developer communities
+https://www.solidot.org/index.rss
+https://sspai.com/feed
+https://www.appinn.com/feed/
+https://www.ifanr.com/feed
+https://www.36kr.com/feed
+https://www.qbitai.com/feed
+https://www.ithome.com/rss/
+https://www.cnbeta.com.tw/backend.php
+https://www.gcores.com/rss
+https://www.v2ex.com/index.xml
+https://www.oschina.net/news/rss
+https://www.infoq.cn/feed.xml
+https://www.ruanyifeng.com/blog/atom.xml
+
+# Tech news / media
+https://techcrunch.com/feed/
+https://techcrunch.com/category/artificial-intelligence/feed/
+https://www.theverge.com/rss/index.xml
+https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+https://feeds.arstechnica.com/arstechnica/index
+https://www.wired.com/feed/rss
+https://www.technologyreview.com/feed/
+https://www.engadget.com/rss.xml
+https://venturebeat.com/feed/
+https://www.zdnet.com/news/rss.xml
+https://www.cnet.com/rss/news/
+https://feeds.bbci.co.uk/news/technology/rss.xml
+https://www.theguardian.com/technology/rss
+https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
+https://thenewstack.io/feed/
+https://spectrum.ieee.org/rss/fulltext
+https://www.infoq.com/feed/
+https://the-decoder.com/feed/
+https://9to5mac.com/feed/
+https://www.macrumors.com/macrumors.xml
+
+# Official AI / model labs / cloud platforms
+https://openai.com/news/rss.xml
+https://blog.google/technology/ai/rss/
+https://developers.googleblog.com/feeds/posts/default
+https://research.google/blog/rss/
+https://deepmind.google/blog/rss.xml
+https://azure.microsoft.com/en-us/blog/feed/
+https://www.microsoft.com/en-us/research/feed/
+https://blogs.microsoft.com/feed/
+https://aws.amazon.com/blogs/aws/feed/
+https://github.blog/feed/
+https://blog.cloudflare.com/rss/
+https://stripe.com/blog/feed.rss
+https://www.apple.com/newsroom/rss-feed.rss
+https://developer.nvidia.com/blog/feed/
+https://www.databricks.com/feed
+https://mistral.ai/rss.xml
+https://windsurf.com/feed.xml
+https://huggingface.co/blog/feed.xml
+https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_engineering.xml
+https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml
+
+# AI engineering / research commentary
+https://blog.langchain.com/rss.xml
+https://ollama.com/blog/rss.xml
+https://pytorch.org/blog/feed.xml
+https://blog.tensorflow.org/feeds/posts/default
+https://www.fast.ai/index.xml
+https://www.latent.space/feed
+https://www.interconnects.ai/feed
+https://www.semianalysis.com/feed
+https://simonwillison.net/atom/everything/
+
+# Developer platforms / engineering blogs
+https://engineering.fb.com/feed/
+https://engineering.atspotify.com/feed/
+https://medium.com/feed/airbnb-engineering
+https://medium.com/feed/pinterest-engineering
+https://discord.com/blog/rss.xml
+https://slack.engineering/feed/
+https://vercel.com/blog/rss.xml
+https://supabase.com/rss.xml
+https://neon.tech/blog/rss.xml
+https://fly.io/blog/feed.xml
+https://blog.heroku.com/feed
+https://www.docker.com/blog/feed/
+https://kubernetes.io/feed.xml
+https://www.cncf.io/feed/
+https://www.hashicorp.com/blog/feed.xml
+https://tailscale.com/blog/index.xml
+https://blog.rust-lang.org/feed.xml
+https://www.avanderlee.com/feed/
+
+# Communities / launch radar
+https://hnrss.org/frontpage
+https://news.ycombinator.com/rss
+https://www.producthunt.com/feed
+https://dev.to/feed

@@ -1,0 +1,28 @@
+name: Feature idea
+description: Propose a growth / DX improvement
+labels: ["idea"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What friction exists today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How should XGrowth behave?
+    validations:
+      required: true
+  - type: dropdown
+    id: api-cost
+    attributes:
+      label: Extra X API cost?
+      options:
+        - None / zero-read
+        - Small (metrics only)
+        - Meaningful write spend
+    validations:
+      required: true

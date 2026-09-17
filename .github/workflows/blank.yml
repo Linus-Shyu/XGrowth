@@ -1,0 +1,364 @@
+name: bun scheduled tweet
+
+on:
+  workflow_dispatch:
+  # Schedules are intentionally omitted in the public template.
+  # Add your own cron after configuring secrets — see README.
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: bun-scheduled-tweet
+  cancel-in-progress: true
+
+jobs:
+  post-tweet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_URL: ${{ vars.OPENAI_API_URL || 'https://api.deepseek.com/chat/completions' }}
+      OPENAI_MODEL_ID: ${{ vars.OPENAI_MODEL_ID || 'deepseek-v4-flash' }}
+      OPENAI_THINKING_ENABLED: ${{ vars.OPENAI_THINKING_ENABLED || 'false' }}
+      OPENAI_USAGE_TRACKING_ENABLED: ${{ vars.OPENAI_USAGE_TRACKING_ENABLED || 'true' }}
+      OPENAI_USAGE_FILE: .github/runtime/openai-usage.json
+      OPENAI_MONTHLY_BUDGET_USD: ${{ vars.OPENAI_MONTHLY_BUDGET_USD || '0' }}
+      OPENAI_BUDGET_SAFETY_RATIO: ${{ vars.OPENAI_BUDGET_SAFETY_RATIO || '0.9' }}
+      OPENAI_COST_INPUT_1K_USD: ${{ vars.OPENAI_COST_INPUT_1K_USD || '0' }}
+      OPENAI_COST_OUTPUT_1K_USD: ${{ vars.OPENAI_COST_OUTPUT_1K_USD || '0' }}
+      OPENAI_COST_REQUEST_USD: ${{ vars.OPENAI_COST_REQUEST_USD || '0' }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      TWEET_LANGUAGE: ${{ vars.TWEET_LANGUAGE || 'en' }}
+      TWEET_TOPIC: ${{ vars.TWEET_TOPIC || 'technology, AI, Big Tech, consumer tech, startups, apps, cybersecurity, cloud, software' }}
+      TWEET_PROMPT: ${{ vars.TWEET_PROMPT }}
+      TWEET_STYLE_PROMPT: ${{ vars.TWEET_STYLE_PROMPT }}
+      TWEET_SYSTEM_PROMPT: ${{ vars.TWEET_SYSTEM_PROMPT }}
+      TWEET_TEXT: ${{ vars.TWEET_TEXT }}
+      TWEET_IMAGE_ENABLED: ${{ vars.TWEET_IMAGE_ENABLED || 'false' }}
+      X_API_MONTHLY_BUDGET_USD: ${{ vars.X_API_MONTHLY_BUDGET_USD || '5' }}
+      X_API_MIN_HOURS_BETWEEN_POSTS: ${{ vars.X_API_MIN_HOURS_BETWEEN_POSTS || '0' }}
+      TWEET_DAILY_IMAGE_MODE: ${{ vars.TWEET_DAILY_IMAGE_MODE || 'off' }}
+      TWEET_DAILY_IMAGE_UTC_HOUR: ${{ vars.TWEET_DAILY_IMAGE_UTC_HOUR || '16' }}
+      TWEET_IMAGE_MAX_PER_DAY: ${{ vars.TWEET_IMAGE_MAX_PER_DAY || '0' }}
+      TWEET_IMAGE_MIN_HOT_SCORE: ${{ vars.TWEET_IMAGE_MIN_HOT_SCORE || '2.5' }}
+      TWEET_IMAGE_MIN_CROSS_SOURCE_ECHOES: ${{ vars.TWEET_IMAGE_MIN_CROSS_SOURCE_ECHOES || '0' }}
+      TWEET_STORY_VERDICT_CACHE_FILE: ${{ vars.TWEET_STORY_VERDICT_CACHE_FILE || '.github/runtime/story-verdict-cache.json' }}
+      TWEET_IMAGE_WORTH_PROMPT: ${{ vars.TWEET_IMAGE_WORTH_PROMPT }}
+      TWEET_IMAGE_WORTH_SYSTEM_PROMPT: ${{ vars.TWEET_IMAGE_WORTH_SYSTEM_PROMPT }}
+      OPENAI_IMAGE_VERDICT_TEMPERATURE: ${{ vars.OPENAI_IMAGE_VERDICT_TEMPERATURE }}
+      TWEET_SKIP_WEAK_STORIES: ${{ vars.TWEET_SKIP_WEAK_STORIES || 'true' }}
+      TWEET_MIN_HOT_SCORE: ${{ vars.TWEET_MIN_HOT_SCORE || '1.25' }}
+      TWEET_MIN_HOT_SCORE_WITH_ECHOES: ${{ vars.TWEET_MIN_HOT_SCORE_WITH_ECHOES || '1.0' }}
+      TWEET_STORY_COOLDOWN_HOURS: ${{ vars.TWEET_STORY_COOLDOWN_HOURS || '36' }}
+      TWEET_AI_SKIP_LOW_VALUE: ${{ vars.TWEET_AI_SKIP_LOW_VALUE || 'true' }}
+      X_API_COST_TWEET_CREATE: ${{ vars.X_API_COST_TWEET_CREATE || '0.015' }}
+      X_API_COST_MEDIA_UPLOAD: ${{ vars.X_API_COST_MEDIA_UPLOAD || '0.015' }}
+      X_API_BUDGET_FILE: .github/runtime/x-api-budget.json
+      X_ACCESS_TOKEN_CACHE_FILE: .github/runtime/x-access-token.json
+      TWEET_IMAGE_PROVIDER: ${{ vars.TWEET_IMAGE_PROVIDER || 'pexels' }}
+      TWEET_IMAGE_SEARCH_QUERY_MODE: ${{ vars.TWEET_IMAGE_SEARCH_QUERY_MODE || 'local' }}
+      TWEET_IMAGE_SEARCH_QUERY: ${{ vars.TWEET_IMAGE_SEARCH_QUERY }}
+      TWEET_IMAGE_SEARCH_PROMPT: ${{ vars.TWEET_IMAGE_SEARCH_PROMPT }}
+      TWEET_IMAGE_SEARCH_SYSTEM_PROMPT: ${{ vars.TWEET_IMAGE_SEARCH_SYSTEM_PROMPT }}
+      TWEET_IMAGE_SEARCH_RESULTS: ${{ vars.TWEET_IMAGE_SEARCH_RESULTS }}
+      TWEET_IMAGE_CANDIDATE_COUNT: ${{ vars.TWEET_IMAGE_CANDIDATE_COUNT }}
+      TWEET_IMAGE_ORIENTATION: ${{ vars.TWEET_IMAGE_ORIENTATION || 'landscape' }}
+      TWEET_IMAGE_FETCH_TIMEOUT_MS: ${{ vars.TWEET_IMAGE_FETCH_TIMEOUT_MS }}
+      TWEET_IMAGE_MAX_BYTES: ${{ vars.TWEET_IMAGE_MAX_BYTES }}
+      NEWS_RSS_URLS: ${{ vars.NEWS_RSS_URLS }}
+      NEWS_RSS_URLS_FILE: .github/config/news-rss-urls.txt
+      NEWS_MAX_ITEMS: ${{ vars.NEWS_MAX_ITEMS }}
+      NEWS_PER_FEED_MAX: ${{ vars.NEWS_PER_FEED_MAX }}
+      NEWS_FETCH_CONCURRENCY: ${{ vars.NEWS_FETCH_CONCURRENCY }}
+      NEWS_FETCH_TIMEOUT_MS: ${{ vars.NEWS_FETCH_TIMEOUT_MS }}
+      NEWS_RSS_HEALTH_ENABLED: ${{ vars.NEWS_RSS_HEALTH_ENABLED || 'true' }}
+      NEWS_RSS_SKIP_AFTER_FAILURES: ${{ vars.NEWS_RSS_SKIP_AFTER_FAILURES || '3' }}
+      NEWS_RSS_HEALTH_PROBE_EVERY_HOURS: ${{ vars.NEWS_RSS_HEALTH_PROBE_EVERY_HOURS || '12' }}
+      TWEET_LANGUAGE_MODE: ${{ vars.TWEET_LANGUAGE_MODE || 'timezone' }}
+      TWEET_ALTERNATE_LANGUAGES: ${{ vars.TWEET_ALTERNATE_LANGUAGES || 'false' }}
+      TWEET_FIRST_LANGUAGE: ${{ vars.TWEET_FIRST_LANGUAGE || 'en' }}
+      TWEET_PEAK_POSTING_ENABLED: ${{ vars.TWEET_PEAK_POSTING_ENABLED || 'true' }}
+      TWEET_PEAK_ZH_UTC_HOURS: ${{ vars.TWEET_PEAK_ZH_UTC_HOURS || '12' }}
+      TWEET_PEAK_EN_UTC_HOURS: ${{ vars.TWEET_PEAK_EN_UTC_HOURS || '13,15,17' }}
+      TWEET_PEAK_UTC_HOURS: ${{ vars.TWEET_PEAK_UTC_HOURS || '12,13,15,17' }}
+      TWEET_HASHTAGS_ENABLED: ${{ vars.TWEET_HASHTAGS_ENABLED || 'true' }}
+      TWEET_HASHTAG_COUNT: ${{ vars.TWEET_HASHTAG_COUNT || '2' }}
+      TWEET_HASHTAG_PROMPT: ${{ vars.TWEET_HASHTAG_PROMPT }}
+      TWEET_STYLE_PROMPT_ZH: ${{ vars.TWEET_STYLE_PROMPT_ZH }}
+      TWEET_STYLE_PROMPT_EN: ${{ vars.TWEET_STYLE_PROMPT_EN }}
+      TWEET_CANDIDATE_COUNT: ${{ vars.TWEET_CANDIDATE_COUNT || '4' }}
+      TWEET_CONTENT_FORMAT_ID: ${{ vars.TWEET_CONTENT_FORMAT_ID }}
+      TWEET_CONTENT_FORMAT_IDS: ${{ vars.TWEET_CONTENT_FORMAT_IDS || 'prediction,decision_rule,brutal_truth,sharp_question' }}
+      TWEET_FORMAT_BASE_ALLOCATION: ${{ vars.TWEET_FORMAT_BASE_ALLOCATION || 'prediction=0.65,decision_rule=0.20,brutal_truth=0.12,sharp_question=0.03' }}
+      TWEET_GROWTH_EXPLORE_FORMAT_ID: ${{ vars.TWEET_GROWTH_EXPLORE_FORMAT_ID || 'brutal_truth' }}
+      TWEET_BUILD_IN_PUBLIC_FILE: ${{ vars.TWEET_BUILD_IN_PUBLIC_FILE || '.github/content/build-in-public.jsonl' }}
+      TWEET_BUILD_IN_PUBLIC_NOTES: ${{ vars.TWEET_BUILD_IN_PUBLIC_NOTES }}
+      TWEET_BUILD_IN_PUBLIC_RATIO: ${{ vars.TWEET_BUILD_IN_PUBLIC_RATIO || '0.35' }}
+      TWEET_BUILD_IN_PUBLIC_MAX_AGE_DAYS: ${{ vars.TWEET_BUILD_IN_PUBLIC_MAX_AGE_DAYS || '45' }}
+      TWEET_BUILD_IN_PUBLIC_LIMIT: ${{ vars.TWEET_BUILD_IN_PUBLIC_LIMIT || '20' }}
+      TWEET_DRY_RUN: ${{ vars.TWEET_DRY_RUN || 'false' }}
+      TWEET_DRY_RUN_TOP_CANDIDATES: ${{ vars.TWEET_DRY_RUN_TOP_CANDIDATES || 'false' }}
+      TWEET_CADENCE_CONTROLLER_ENABLED: ${{ vars.TWEET_CADENCE_CONTROLLER_ENABLED || 'true' }}
+      TWEET_CADENCE_ENFORCEMENT: ${{ vars.TWEET_CADENCE_ENFORCEMENT || 'budget_guard' }}
+      TWEET_CADENCE_DAILY_POST_TARGET: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET || '4' }}
+      TWEET_CADENCE_DAILY_POST_TARGET_EN: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_EN || '3' }}
+      TWEET_CADENCE_DAILY_POST_TARGET_ZH: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_ZH || '1' }}
+      TWEET_CADENCE_MIN_HOURS_BETWEEN_POSTS: ${{ vars.TWEET_CADENCE_MIN_HOURS_BETWEEN_POSTS }}
+      TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS: ${{ vars.TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS || '36' }}
+      TWEET_CADENCE_TOPIC_TIMING_WINDOW_HOURS: ${{ vars.TWEET_CADENCE_TOPIC_TIMING_WINDOW_HOURS || '1.5' }}
+      TWEET_ANALYTICS_ENABLED: ${{ vars.TWEET_ANALYTICS_ENABLED || 'true' }}
+      TWEET_ANALYTICS_FILE: .github/runtime/tweet-analytics.json
+      TWEET_ANALYTICS_MAX_RECORDS: ${{ vars.TWEET_ANALYTICS_MAX_RECORDS }}
+      TWEET_RUN_EVENTS_MAX: ${{ vars.TWEET_RUN_EVENTS_MAX || '200' }}
+      TWEET_GROWTH_LEARNING_ENABLED: ${{ vars.TWEET_GROWTH_LEARNING_ENABLED || 'true' }}
+      TWEET_GROWTH_MIN_SAMPLES: ${{ vars.TWEET_GROWTH_MIN_SAMPLES || '10' }}
+      TWEET_REFRESH_METRICS_AFTER_POST: ${{ vars.TWEET_REFRESH_METRICS_AFTER_POST || 'false' }}
+      TWEET_ACCOUNT_SNAPSHOT_ENABLED: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_ENABLED || 'false' }}
+      TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '24' }}
+      TWEET_METRICS_MAX_POSTS: ${{ vars.TWEET_METRICS_MAX_POSTS || '5' }}
+      TWEET_METRICS_MIN_AGE_MINUTES: ${{ vars.TWEET_METRICS_MIN_AGE_MINUTES || '60' }}
+      TWEET_METRICS_MAX_AGE_DAYS: ${{ vars.TWEET_METRICS_MAX_AGE_DAYS || '30' }}
+      TWEET_QUALITY_GATE_ENABLED: ${{ vars.TWEET_QUALITY_GATE_ENABLED || 'true' }}
+      TWEET_QUALITY_GATE_STRICT: ${{ vars.TWEET_QUALITY_GATE_STRICT || 'false' }}
+      TWEET_AI_QUALITY_GATE_ENABLED: ${{ vars.TWEET_AI_QUALITY_GATE_ENABLED || 'false' }}
+      TWEET_HOTSPOT_RADAR_ENABLED: ${{ vars.TWEET_HOTSPOT_RADAR_ENABLED || 'false' }}
+      TWEET_HOTSPOT_RADAR_QUERIES: ${{ vars.TWEET_HOTSPOT_RADAR_QUERIES }}
+      TWEET_HOTSPOT_RADAR_MAX_QUERIES: ${{ vars.TWEET_HOTSPOT_RADAR_MAX_QUERIES }}
+      TWEET_HOTSPOT_RADAR_MAX_ITEMS: ${{ vars.TWEET_HOTSPOT_RADAR_MAX_ITEMS }}
+      TWEET_FOLLOWUP_DRAFTS_ENABLED: ${{ vars.TWEET_FOLLOWUP_DRAFTS_ENABLED || 'true' }}
+      TWEET_FOLLOWUP_MAX_DRAFTS: ${{ vars.TWEET_FOLLOWUP_MAX_DRAFTS }}
+      X_API_USAGE_TRACKING_ENABLED: ${{ vars.X_API_USAGE_TRACKING_ENABLED || 'true' }}
+      X_API_USAGE_FILE: .github/runtime/x-api-usage.json
+      X_API_COST_READ: ${{ vars.X_API_COST_READ || '0.05' }}
+      X_API_RUNWAY_GUARD_ENABLED: ${{ vars.X_API_RUNWAY_GUARD_ENABLED || 'true' }}
+      X_API_RUNWAY_LOOKBACK_DAYS: ${{ vars.X_API_RUNWAY_LOOKBACK_DAYS || '7' }}
+      X_API_RUNWAY_MAINTENANCE_RUNS_PER_DAY: ${{ vars.X_API_RUNWAY_MAINTENANCE_RUNS_PER_DAY || '1' }}
+      X_API_RUNWAY_MIN_DAYS: ${{ vars.X_API_RUNWAY_MIN_DAYS || '3' }}
+      X_API_CREDITS_CIRCUIT_BREAKER_ENABLED: ${{ vars.X_API_CREDITS_CIRCUIT_BREAKER_ENABLED || 'true' }}
+      X_API_CREDITS_CIRCUIT_TTL_HOURS: ${{ vars.X_API_CREDITS_CIRCUIT_TTL_HOURS || '24' }}
+      GROWTH_REPORT_FILE: .github/runtime/growth-report.md
+      TWEET_GROWTH_STRATEGY_ENABLED: ${{ vars.TWEET_GROWTH_STRATEGY_ENABLED || 'true' }}
+      TWEET_GROWTH_STRATEGY_FILE: .github/runtime/growth-strategy.json
+      GROWTH_STRATEGY_PUBLIC_FILE: ${{ vars.GROWTH_STRATEGY_PUBLIC_FILE || 'reports/growth-strategy.json' }}
+      GROWTH_EVOLUTION_FILE: .github/runtime/growth-evolution.jsonl
+      GROWTH_EVOLUTION_PUBLIC_FILE: ${{ vars.GROWTH_EVOLUTION_PUBLIC_FILE || 'reports/growth-evolution.jsonl' }}
+      TWEET_ANALYTICS_PUBLIC_FILE: ${{ vars.TWEET_ANALYTICS_PUBLIC_FILE || 'reports/tweet-analytics.json' }}
+      RSS_STATE_FILE: .github/runtime/rss-state.json
+      TWEET_LANGUAGE_STATE_FILE: .github/runtime/tweet-language-state.json
+      TWEET_HISTORY_FILE: .github/runtime/tweet-history.json
+      TWEET_HISTORY_MAX: ${{ vars.TWEET_HISTORY_MAX }}
+      TWEET_ARCHIVE_ENABLED: ${{ vars.TWEET_ARCHIVE_ENABLED || 'true' }}
+      TWEET_ARCHIVE_FILE: archive/tweets.jsonl
+      X_CLIENT_ID: ${{ secrets.X_CLIENT_ID }}
+      X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET }}
+      X_OAUTH2_REFRESH_TOKEN: ${{ secrets.X_OAUTH2_REFRESH_TOKEN }}
+      X_OAUTH2_REFRESH_TOKEN_REPO: ${{ secrets.X_OAUTH2_REFRESH_TOKEN }}
+      X_REFRESH_TOKEN_OUT_FILE: .github/runtime/x-refresh-token.txt
+      GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # 1. 直接拉取核心目录，把 x-refresh-token.txt、rss-state 和历史纪录一并接管
+      - name: Restore learning cache
+        id: restore-learning
+        uses: actions/cache/restore@v5
+        with:
+          path: .github/runtime
+          key: x-bot-learning-${{ github.run_id }}
+          restore-keys: |
+            x-bot-learning-
+            x-bot-runtime-
+
+      - name: Restore token cache
+        id: restore-tokens
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            .github/runtime/x-refresh-token.txt
+            .github/runtime/x-access-token.json
+          key: x-bot-tokens-${{ github.run_id }}
+          restore-keys: |
+            x-bot-tokens-
+
+      - name: Ensure runtime directory exists
+        run: mkdir -p .github/runtime
+
+      - name: Purge invalidated OAuth runtime cache
+        if: hashFiles('.github/runtime/x-refresh-token.invalid.json') != ''
+        run: |
+          bash .github/scripts/purge-actions-cache.sh
+          rm -f .github/runtime/x-refresh-token.txt \
+                .github/runtime/x-access-token.json \
+                .github/runtime/x-refresh-token.invalid.json
+          echo "Cleared invalidated OAuth runtime files."
+
+      # 2. 优先用 cache 里轮换后的 refresh token; 没有才回退 GitHub secret
+      - name: Load cached x refresh token
+        shell: bash
+        run: |
+          # 检查被舍弃标记（防止读取已被 X 判定无效的过期缓存死锁）
+          if [ -f .github/runtime/x-refresh-token.invalid.json ]; then
+            echo "⚠️ Detected a token invalidation marker from last runtime. Purging dead cache."
+            rm -f .github/runtime/x-refresh-token.txt
+          fi
+
+          if [ -s .github/runtime/x-refresh-token.txt ]; then
+            token="$(tr -d '\r\n\t ' < .github/runtime/x-refresh-token.txt)"
+            if [ -n "$token" ]; then
+              echo "::add-mask::$token"
+              echo "X_OAUTH2_REFRESH_TOKEN_CACHE=$token" >> "$GITHUB_ENV"
+              echo "✅ Successfully injected cached X Token into GITHUB_ENV."
+            else
+              echo "⚠️ Cached file was empty or corrupted. Reverting to Repo Secret."
+              rm -f .github/runtime/x-refresh-token.txt
+            fi
+          else
+            echo "ℹ️ No usable cache found. Performing a fresh cold start with Repo Secret."
+          fi
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: latest
+
+      - name: Zero-read local fallback self-test
+        env:
+          TWEET_SELF_TEST: local_fallback
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: X API cost governor self-test
+        env:
+          TWEET_SELF_TEST: cost_governor
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Cached learning loop self-test
+        env:
+          TWEET_SELF_TEST: learning_loop
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Cached hourly load timing self-test
+        env:
+          TWEET_SELF_TEST: hourly_load
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Dashboard data validator self-test
+        run: node .github/scripts/validate-dashboard-data.mjs --self-test
+
+      # 3. 运行你的核心发推脚本
+      - name: Generate and post tweet
+        id: post-tweet
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Purge stale runtime cache after OAuth failure
+        if: always() && steps.post-tweet.outputs.purge_runtime_cache == 'true'
+        env:
+          POST_TWEET_OUTCOME: ${{ steps.post-tweet.outcome }}
+        run: |
+          bash .github/scripts/purge-actions-cache.sh
+          if [ "$POST_TWEET_OUTCOME" = "success" ]; then
+            rm -f .github/runtime/x-refresh-token.invalid.json
+            echo "Purged stale remote runtime caches; keeping fresh local runtime files from successful run."
+          else
+            rm -f .github/runtime/x-refresh-token.txt \
+                  .github/runtime/x-access-token.json \
+                  .github/runtime/x-refresh-token.invalid.json
+          fi
+
+      - name: Commit tweet archive to this repository
+        if: success()
+        shell: bash
+        run: |
+          branch="${GITHUB_REF_NAME:-main}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add archive/
+          if git diff --staged --quiet; then
+            echo "No tweet archive changes to commit."
+          else
+            git commit -m "chore: archive tweet $(date -u +%Y-%m-%dT%H:%MZ)"
+            for attempt in 1 2 3; do
+              git fetch origin "$branch"
+              git rebase "origin/$branch"
+              if git push origin "HEAD:$branch"; then
+                exit 0
+              fi
+              echo "Push failed; retrying after rebase ($attempt/3)."
+            done
+
+            echo "Failed to push tweet archive after retries."
+            exit 1
+          fi
+
+      - name: Sync tweet archive to external repository
+        if: success()
+        env:
+          TWEET_SYNC_REPO: ${{ vars.TWEET_SYNC_REPO || 'Linus-Shyu/Tweets' }}
+          TWEET_SYNC_BRANCH: ${{ vars.TWEET_SYNC_BRANCH || 'master' }}
+          TWEET_SYNC_PATH: ${{ vars.TWEET_SYNC_PATH || 'tweets.jsonl' }}
+          TWEET_SYNC_GITHUB_TOKEN: ${{ secrets.TWEET_SYNC_GITHUB_TOKEN }}
+        run: bash .github/scripts/sync-tweet-archive.sh
+
+      # Persist rotated X refresh tokens even when the tweet step fails later
+      # (quality gate, media upload, etc.). Otherwise the GitHub secret goes stale
+      # and the next scheduled run dies on OAuth before posting.
+      - name: Check token cache worth saving
+        id: token-cache
+        if: always()
+        run: |
+          if [ -f .github/runtime/x-refresh-token.txt ] || [ -f .github/runtime/x-access-token.json ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+            echo "Will persist rotated X refresh token separately from learning state."
+          else
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping token cache save; no usable OAuth files."
+          fi
+
+      - name: Save token cache
+        if: always() && steps.token-cache.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .github/runtime/x-refresh-token.txt
+            .github/runtime/x-access-token.json
+          key: x-bot-tokens-${{ github.run_id }}
+
+      - name: Check learning cache worth saving
+        id: learning-cache
+        if: always()
+        run: |
+          if [ -f .github/runtime/rss-state.json ] || \
+             [ -f .github/runtime/x-api-budget.json ] || \
+             [ -f .github/runtime/tweet-history.json ] || \
+             [ -f .github/runtime/story-verdict-cache.json ] || \
+             [ -f .github/runtime/tweet-analytics.json ] || \
+             [ -f .github/runtime/openai-usage.json ] || \
+             [ -f .github/runtime/x-api-usage.json ] || \
+             [ -f .github/runtime/growth-strategy.json ] || \
+             [ -f .github/runtime/growth-evolution.jsonl ] || \
+             [ -f .github/runtime/growth-report.md ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping learning cache save; no learning state files to persist."
+          fi
+
+      - name: Save learning cache
+        if: always() && steps.learning-cache.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: .github/runtime
+          key: x-bot-learning-${{ github.run_id }}

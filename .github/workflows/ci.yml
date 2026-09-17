@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  self-tests:
+    name: Self-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Zero-read local fallback
+        env:
+          TWEET_SELF_TEST: local_fallback
+        run: node .github/scripts/post-tweet.mjs
+
+      - name: X API cost governor
+        env:
+          TWEET_SELF_TEST: cost_governor
+        run: node .github/scripts/post-tweet.mjs
+
+      - name: Cached learning loop
+        env:
+          TWEET_SELF_TEST: learning_loop
+        run: node .github/scripts/post-tweet.mjs
+
+      - name: Cached hourly load timing
+        env:
+          TWEET_SELF_TEST: hourly_load
+        run: node .github/scripts/post-tweet.mjs
+
+      - name: Dashboard data validator
+        run: node .github/scripts/validate-dashboard-data.mjs --self-test

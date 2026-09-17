@@ -1,0 +1,26 @@
+name: Bug report
+description: Something broke in XGrowth
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please redact secrets from logs.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Expected vs actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Steps, workflow run URL, self-test command
+    validations:
+      required: true
+  - type: input
+    id: run-url
+    attributes:
+      label: GitHub Actions run URL (if any)

@@ -1,0 +1,351 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-17T03:47:01.440Z",
+  "note": "Sanitized sample for docs and local dashboard demos. Not a live secrets-bearing dump.",
+  "accountSnapshots": [
+    {
+      "checkedAt": "2026-09-16T01:27:59.754Z",
+      "userId": "1657318454553358336",
+      "username": "Linus_Shyu",
+      "publicMetrics": {
+        "followers_count": 85,
+        "following_count": 183,
+        "like_count": 550,
+        "listed_count": 0,
+        "media_count": 173,
+        "tweet_count": 518
+      }
+    }
+  ],
+  "tweets": [
+    {
+      "id": "2095948533211775446",
+      "text": "Before adopting Product Hunt launch, test one real workflow: speed, failure rate, rollback. If any fail, do not pay the tax.\n#AI #BigTech",
+      "language": "en",
+      "postedAt": "2026-09-04T18:54:05.991Z",
+      "url": "https://x.com/i/web/status/2095948533211775446",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "GPT-6 Astra",
+      "newsSource": "producthunt.com",
+      "templateId": "massive_value_drop",
+      "candidateScore": 160.9,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096075523814314388",
+      "text": "BBC tech segment is not the product. The product is whoever owns the default workflow after week one.\n#AI #BigTech",
+      "language": "en",
+      "postedAt": "2026-09-05T03:18:42.909Z",
+      "url": "https://x.com/i/web/status/2096075523814314388",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "Tech Now",
+      "newsSource": "feeds.bbci.co.uk",
+      "templateId": "brutal_truth",
+      "candidateScore": 178.2,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096238015563649462",
+      "text": "OpenAI AI model cycle 先别迁移，拿一个真实流程测速度、失败率和回滚；三项不过，就别交智商税。\n#AI #ConsumerTech",
+      "language": "zh",
+      "postedAt": "2026-09-05T14:04:23.960Z",
+      "url": "https://x.com/i/web/status/2096238015563649462",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "[OpenAI] 卧槽 GPT-6 Astra 就是 AGI。",
+      "newsSource": "v2ex.com",
+      "templateId": "massive_value_drop",
+      "candidateScore": 207.3,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096297264742367430",
+      "text": "OpenAI called Astra Critical for cybersecurity. So a handful of orgs get it now. Everyone else waits. That gap is where your competitor builds the default workflow. By the time you have access, adoption is already decided. Don't wait for API keys. Build against the…\n#DevTools #AI",
+      "language": "en",
+      "postedAt": "2026-09-05T17:59:50.093Z",
+      "url": "https://x.com/i/web/status/2096297264742367430",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "GPT-6 Astra 模型发布，OpenAI 总裁布罗克曼自信放话“欢迎来到 AGI 时代”",
+      "newsSource": "ithome.com",
+      "templateId": "prediction",
+      "candidateScore": 175.7,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096340614132404396",
+      "text": "Hard lesson on openai AI model cycle: the demo was free, the rollback was not. Next time, measure one real workflow before it becomes default.\n#AI #Cybersecurity",
+      "language": "en",
+      "postedAt": "2026-09-05T20:52:05.375Z",
+      "url": "https://x.com/i/web/status/2096340614132404396",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "Safety overview: GPT-6 Astra",
+      "newsSource": "openai.com",
+      "templateId": "the_hard_way",
+      "candidateScore": 215.8,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096437857518842240",
+      "text": "Hacker News thread is not the product. The product is whoever owns the default workflow after week one.\n#AI #Hardware",
+      "language": "en",
+      "postedAt": "2026-09-06T03:18:29.995Z",
+      "url": "https://x.com/i/web/status/2096437857518842240",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "GPT-6 Astra on robot arms",
+      "newsSource": "hnrss.org",
+      "templateId": "brutal_truth",
+      "candidateScore": 177.9,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096606654104060023",
+      "text": "大多数开发者以为 OAuth 轮换风险在令牌刷新那一秒，x_bot 用生产事故告诉你：风险在保存失败，令牌轮换成功、缓存保存失败，GitHub secret 下一秒就过期，质量门禁失败照样消耗一次刷新——如果不持久化新令牌，你的 cron 会带着一个死令牌运行。\n#DevTools #AI",
+      "language": "zh",
+      "postedAt": "2026-09-06T14:29:14.264Z",
+      "url": "https://x.com/i/web/status/2096606654104060023",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "x_bot: X OAuth refresh tokens rotated, then vanished because cache save was success-only.",
+      "newsSource": "build-in-public",
+      "templateId": "brutal_truth",
+      "candidateScore": 183.1,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096661379944189988",
+      "text": "2026 Hugo Awards are a playbook for operators. Pak took the record from a 26-year-old Martin. Harriow's novel got a Netflix deal BEFORE the ink dried. Next: use the award as a distribution engine, not an endpoint. Your pipeline should convert recognition i…\n#BigTech #ConsumerTech",
+      "language": "en",
+      "postedAt": "2026-09-06T18:06:41.916Z",
+      "url": "https://x.com/i/web/status/2096661379944189988",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "2026 年雨果奖公布",
+      "newsSource": "solidot.org",
+      "templateId": "massive_value_drop",
+      "candidateScore": 182.6,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096704888243712106",
+      "text": "GPT-6 Astra isn't a model release. It's a control play. OpenAI picks who gets 'Critical' capability first. Your roadmap now waits on their deployment calendar. Build on open weights where you control the default shift.\n#AI #BigTech",
+      "language": "en",
+      "postedAt": "2026-09-06T20:59:35.111Z",
+      "url": "https://x.com/i/web/status/2096704888243712106",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "Introducing GPT-6 Astra for developers",
+      "newsSource": "simonwillison.net",
+      "templateId": "brutal_truth",
+      "candidateScore": 212.6,
+      "latestMetrics": null
+    },
+    {
+      "id": "2096799751895220396",
+      "text": "90% of devs think OAuth rotation risk is the refresh. It's not. The cliff is saving the new token. x_bot: gate passed, cache write failed, GitHub secret stale, cron dead. Design for write failure first — success-only caching is how you lose tokens silently.\n#DevTools #AI",
+      "language": "en",
+      "postedAt": "2026-09-07T03:16:32.394Z",
+      "url": "https://x.com/i/web/status/2096799751895220396",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "x_bot: X OAuth refresh tokens rotated, then vanished because cache save was success-only.",
+      "newsSource": "build-in-public",
+      "templateId": "myth_busting",
+      "candidateScore": 163.3,
+      "latestMetrics": null
+    },
+    {
+      "id": "2097047459394416884",
+      "text": "build-in-public story is not the product. The product is whoever owns the default workflow after week one.\n#DevTools #AI",
+      "language": "en",
+      "postedAt": "2026-09-07T19:40:50.409Z",
+      "url": "https://x.com/i/web/status/2097047459394416884",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "x_bot: X OAuth refresh tokens rotated, then vanished because cache save was success-only.",
+      "newsSource": "build-in-public",
+      "templateId": "brutal_truth",
+      "candidateScore": 188.2,
+      "latestMetrics": null
+    },
+    {
+      "id": "2097002861280506203",
+      "text": "solidot.org story 如果真的重要，第一周就会改变默认流程；如果只让演示更好看，很快会被团队丢回待办清单。\n#AI #BigTech",
+      "language": "zh",
+      "postedAt": "2026-09-07T16:43:37.414Z",
+      "url": "https://x.com/i/web/status/2097002861280506203",
+      "hasMedia": false,
+      "mediaId": null,
+      "newsTitle": "2026 年 Ig Nobel 宣布",
+      "newsSource": "solidot.org",
+      "templateId": "prediction",
+      "candidateScore": 160.3,
+      "latestMetrics": null
+    }
+  ],
+  "runEvents": [
+    {
+      "type": "posted",
+      "category": "x_api",
+      "message": "tweet posted: 2099979807857500646",
+      "details": {
+        "category": "x_api",
+        "tweetId": "2099979807857500646",
+        "hasMedia": false,
+        "source": "feeds.bbci.co.uk",
+        "templateId": "myth_busting"
+      },
+      "createdAt": "2026-09-15T21:52:56.857Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35027893385"
+    },
+    {
+      "type": "posted",
+      "category": "x_api",
+      "message": "tweet posted: 2100067618346418461",
+      "details": {
+        "category": "x_api",
+        "tweetId": "2100067618346418461",
+        "hasMedia": false,
+        "source": "9to5mac.com",
+        "templateId": "the_hard_way"
+      },
+      "createdAt": "2026-09-16T03:41:52.522Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35052664037"
+    },
+    {
+      "type": "posted",
+      "category": "x_api",
+      "message": "tweet posted: 2100247878736449823",
+      "details": {
+        "category": "x_api",
+        "tweetId": "2100247878736449823",
+        "hasMedia": false,
+        "source": "apple.com",
+        "templateId": "the_hard_way"
+      },
+      "createdAt": "2026-09-16T15:38:09.908Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35116478645"
+    },
+    {
+      "type": "posted",
+      "category": "x_api",
+      "message": "tweet posted: 2100275790273495340",
+      "details": {
+        "category": "x_api",
+        "tweetId": "2100275790273495340",
+        "hasMedia": false,
+        "source": "zdnet.com",
+        "templateId": "the_hard_way"
+      },
+      "createdAt": "2026-09-16T17:29:04.577Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35128277672"
+    },
+    {
+      "type": "posted",
+      "category": "x_api",
+      "message": "tweet posted: 2100305218374341041",
+      "details": {
+        "category": "x_api",
+        "tweetId": "2100305218374341041",
+        "hasMedia": false,
+        "source": "techcrunch.com",
+        "templateId": "the_hard_way"
+      },
+      "createdAt": "2026-09-16T19:26:00.736Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35140373350"
+    },
+    {
+      "type": "posted",
+      "category": "x_api",
+      "message": "tweet posted: 2100341766217961654",
+      "details": {
+        "category": "x_api",
+        "tweetId": "2100341766217961654",
+        "hasMedia": false,
+        "source": "engadget.com",
+        "templateId": "the_hard_way"
+      },
+      "createdAt": "2026-09-16T21:51:14.474Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35154425459"
+    },
+    {
+      "type": "skip",
+      "category": "runway",
+      "message": "maintenance read budget skip: X API runway guard paused live reads: $2.280 tracked + ~$0.100 projected now, daily burn ~$0.172, month-end projection $4.622 > $4.50 safe cap.",
+      "details": {
+        "category": "runway",
+        "projectedCost": 0.1,
+        "spent": 2.279999999999999,
+        "safeCap": 4.5,
+        "cooldown": {
+          "active": false,
+          "reasonCode": "none",
+          "severity": "ok",
+          "endpoint": null,
+          "status": null,
+          "since": null,
+          "until": null,
+          "remainingMinutes": 0,
+          "cooldownMinutes": 0,
+          "readGate": "cached_only",
+          "reason": "No active X API cooldown."
+        },
+        "runway": {
+          "active": true,
+          "enabled": true,
+          "reasonCode": "runway_guard",
+          "severity": "warn",
+          "readGate": "cached_only",
+          "budgetUsd": 5,
+          "safeCapUsd": 4.5,
+          "trackedSpendUsd": 2.28,
+          "projectedCostUsd": 0.1,
+          "safeRemainingUsd": 2.22,
+          "observedDailyBurnUsd": 0.172,
+          "plannedDailyBurnUsd": 0.16,
+          "projectedDailyBurnUsd": 0.172,
+          "monthDay": 17,
+          "daysRemaining": 13,
+          "monthEndProjectedSpendUsd": 4.622,
+          "monthEndSafe": false,
+          "runwayDays": 12.3,
+          "reason": "X API runway guard paused live reads: $2.280 tracked + ~$0.100 projected now, daily burn ~$0.172, month-end projection $4.622 > $4.50 safe cap."
+        }
+      },
+      "createdAt": "2026-09-17T01:29:00.849Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35170706213"
+    },
+    {
+      "type": "error",
+      "category": "x_api",
+      "message": "X create tweet failed: {\"detail\":\"credits depleted\",\"status\":402,\"title\":\"Payment Required\",\"type\":\"https://api.x.com/2/problems/credits-depleted\"}",
+      "details": {},
+      "createdAt": "2026-09-17T03:47:01.440Z",
+      "workflowRunUrl": "https://github.com/Linus-Shyu/x_bot/actions/runs/35179339863"
+    }
+  ],
+  "manualReplyDrafts": [
+    {
+      "text": "OpenAI is not racing models here, it is standardizing governance language before regulators do. Within a year, unstated AI policy becomes a procurement blocker, the same way SOC 2 audits became table stakes for SaaS.",
+      "useWhen": "Under OpenAI policy or AI governance announcement posts",
+      "angle": "near-term prediction / platform control",
+      "createdAt": "2026-09-16T01:29:41.199Z"
+    },
+    {
+      "text": "Google is not shipping a smarter assistant, it is resetting the Android default. Once AI lands on Pixel first, every other handset maker pays the distribution tax and none of them recover the margin.",
+      "useWhen": "Under Google Pixel or Android AI feature posts",
+      "angle": "near-term prediction / distribution shift",
+      "createdAt": "2026-09-16T01:29:41.199Z"
+    },
+    {
+      "text": "Most founders migrate to a new AI stack for the demo, not the workflow. Run one real task through it and check rollback before you touch production. A faster demo that breaks revert leaves you locked in with a worse fallback.",
+      "useWhen": "Under AI stack, model migration, or launch comparison posts",
+      "angle": "decision rule / lock-in tradeoff",
+      "createdAt": "2026-09-16T01:29:41.199Z"
+    }
+  ]
+}

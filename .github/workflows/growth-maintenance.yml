@@ -1,0 +1,360 @@
+name: growth maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Maintenance mode. dashboard_only uses cached data only; metrics_report refreshes X metrics and drafts."
+        required: false
+        default: dashboard_only
+        type: choice
+        options:
+          - dashboard_only
+          - metrics_report
+  # Schedules omitted in the public template. Enable after secrets + dashboard sync are configured.
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: x-bot-growth-maintenance
+  cancel-in-progress: true
+
+jobs:
+  growth-maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_URL: ${{ vars.OPENAI_API_URL || 'https://api.deepseek.com/chat/completions' }}
+      OPENAI_MODEL_ID: ${{ vars.OPENAI_MODEL_ID || 'deepseek-v4-flash' }}
+      OPENAI_THINKING_ENABLED: ${{ vars.OPENAI_THINKING_ENABLED || 'false' }}
+      OPENAI_USAGE_TRACKING_ENABLED: ${{ vars.OPENAI_USAGE_TRACKING_ENABLED || 'true' }}
+      OPENAI_USAGE_FILE: .github/runtime/openai-usage.json
+      OPENAI_MONTHLY_BUDGET_USD: ${{ vars.OPENAI_MONTHLY_BUDGET_USD || '0' }}
+      OPENAI_BUDGET_SAFETY_RATIO: ${{ vars.OPENAI_BUDGET_SAFETY_RATIO || '0.9' }}
+      OPENAI_COST_INPUT_1K_USD: ${{ vars.OPENAI_COST_INPUT_1K_USD || '0' }}
+      OPENAI_COST_OUTPUT_1K_USD: ${{ vars.OPENAI_COST_OUTPUT_1K_USD || '0' }}
+      OPENAI_COST_REQUEST_USD: ${{ vars.OPENAI_COST_REQUEST_USD || '0' }}
+      TWEET_MAINTENANCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.schedule == '20 23 * * *' && 'metrics_report' || 'dashboard_only' }}
+      TWEET_ANALYTICS_ENABLED: ${{ vars.TWEET_ANALYTICS_ENABLED || 'true' }}
+      TWEET_ANALYTICS_FILE: .github/runtime/tweet-analytics.json
+      TWEET_ANALYTICS_MAX_RECORDS: ${{ vars.TWEET_ANALYTICS_MAX_RECORDS }}
+      TWEET_RUN_EVENTS_MAX: ${{ vars.TWEET_RUN_EVENTS_MAX || '200' }}
+      TWEET_GROWTH_LEARNING_ENABLED: ${{ vars.TWEET_GROWTH_LEARNING_ENABLED || 'true' }}
+      TWEET_GROWTH_MIN_SAMPLES: ${{ vars.TWEET_GROWTH_MIN_SAMPLES || '10' }}
+      NEWS_RSS_HEALTH_ENABLED: ${{ vars.NEWS_RSS_HEALTH_ENABLED || 'true' }}
+      NEWS_RSS_SKIP_AFTER_FAILURES: ${{ vars.NEWS_RSS_SKIP_AFTER_FAILURES || '3' }}
+      NEWS_RSS_HEALTH_PROBE_EVERY_HOURS: ${{ vars.NEWS_RSS_HEALTH_PROBE_EVERY_HOURS || '12' }}
+      TWEET_ACCOUNT_SNAPSHOT_ENABLED: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_ENABLED || 'true' }}
+      TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '24' }}
+      TWEET_METRICS_MAX_POSTS: ${{ vars.TWEET_METRICS_MAX_POSTS || '5' }}
+      TWEET_METRICS_MIN_AGE_MINUTES: ${{ vars.TWEET_METRICS_MIN_AGE_MINUTES || '60' }}
+      TWEET_METRICS_MAX_AGE_DAYS: ${{ vars.TWEET_METRICS_MAX_AGE_DAYS || '30' }}
+      TWEET_HOTSPOT_RADAR_ENABLED: ${{ vars.TWEET_HOTSPOT_RADAR_ENABLED || 'false' }}
+      TWEET_HOTSPOT_RADAR_QUERIES: ${{ vars.TWEET_HOTSPOT_RADAR_QUERIES }}
+      TWEET_HOTSPOT_RADAR_RESULTS: ${{ vars.TWEET_HOTSPOT_RADAR_RESULTS }}
+      TWEET_HOTSPOT_RADAR_MAX_QUERIES: ${{ vars.TWEET_HOTSPOT_RADAR_MAX_QUERIES || '1' }}
+      TWEET_HOTSPOT_RADAR_MAX_ITEMS: ${{ vars.TWEET_HOTSPOT_RADAR_MAX_ITEMS }}
+      TWEET_AUTO_REPLY_ENABLED: ${{ vars.TWEET_AUTO_REPLY_ENABLED || 'false' }}
+      TWEET_AUTO_REPLY_MODE: ${{ vars.TWEET_AUTO_REPLY_MODE || 'mentions' }}
+      TWEET_AUTO_REPLY_WHITELIST: ${{ vars.TWEET_AUTO_REPLY_WHITELIST || 'karpathy,sama,paulg,levelsio,gregisenberg,rauchg,amasad,dabit3,svpino,nearcyan' }}
+      TWEET_AUTO_REPLY_WHITELIST_ACTION: ${{ vars.TWEET_AUTO_REPLY_WHITELIST_ACTION || 'quote' }}
+      TWEET_AUTO_REPLY_QUERIES: ${{ vars.TWEET_AUTO_REPLY_QUERIES }}
+      TWEET_AUTO_REPLY_MAX_QUERIES: ${{ vars.TWEET_AUTO_REPLY_MAX_QUERIES || '1' }}
+      TWEET_AUTO_REPLY_MAX_PER_DAY: ${{ vars.TWEET_AUTO_REPLY_MAX_PER_DAY || '0' }}
+      TWEET_AUTO_REPLY_MAX_PER_RUN: ${{ vars.TWEET_AUTO_REPLY_MAX_PER_RUN || '0' }}
+      TWEET_AUTO_REPLY_CANDIDATES_PER_RUN: ${{ vars.TWEET_AUTO_REPLY_CANDIDATES_PER_RUN || '5' }}
+      TWEET_AUTO_REPLY_SEARCH_RESULTS: ${{ vars.TWEET_AUTO_REPLY_SEARCH_RESULTS }}
+      TWEET_AUTO_REPLY_MAX_AGE_HOURS: ${{ vars.TWEET_AUTO_REPLY_MAX_AGE_HOURS }}
+      TWEET_AUTO_REPLY_RECORDS_MAX: ${{ vars.TWEET_AUTO_REPLY_RECORDS_MAX }}
+      TWEET_REPLY_DRAFTS_ENABLED: ${{ vars.TWEET_REPLY_DRAFTS_ENABLED || 'true' }}
+      TWEET_REPLY_DRAFT_COUNT: ${{ vars.TWEET_REPLY_DRAFT_COUNT || '5' }}
+      TWEET_REPLY_DRAFT_REUSE_HOURS: ${{ vars.TWEET_REPLY_DRAFT_REUSE_HOURS || '20' }}
+      TWEET_REPLY_DRAFT_THEMES: ${{ vars.TWEET_REPLY_DRAFT_THEMES }}
+      TWEET_REPLY_DRAFT_TARGET_HANDLES: ${{ vars.TWEET_REPLY_DRAFT_TARGET_HANDLES }}
+      TWEET_REPLY_DRAFT_SEARCH_TERMS: ${{ vars.TWEET_REPLY_DRAFT_SEARCH_TERMS }}
+      TWEET_REPLY_DRAFT_SEARCH_QUERY: ${{ vars.TWEET_REPLY_DRAFT_SEARCH_QUERY }}
+      TWEET_FOLLOWUP_DRAFTS_ENABLED: ${{ vars.TWEET_FOLLOWUP_DRAFTS_ENABLED || 'true' }}
+      TWEET_FOLLOWUP_MAX_DRAFTS: ${{ vars.TWEET_FOLLOWUP_MAX_DRAFTS }}
+      TWEET_FOLLOWUP_DRAFT_REUSE_HOURS: ${{ vars.TWEET_FOLLOWUP_DRAFT_REUSE_HOURS || '20' }}
+      TWEET_CADENCE_CONTROLLER_ENABLED: ${{ vars.TWEET_CADENCE_CONTROLLER_ENABLED || 'true' }}
+      TWEET_CADENCE_ENFORCEMENT: ${{ vars.TWEET_CADENCE_ENFORCEMENT || 'budget_guard' }}
+      TWEET_CADENCE_DAILY_POST_TARGET: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET || '4' }}
+      TWEET_CADENCE_DAILY_POST_TARGET_EN: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_EN || '3' }}
+      TWEET_CADENCE_DAILY_POST_TARGET_ZH: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_ZH || '1' }}
+      TWEET_CADENCE_MIN_HOURS_BETWEEN_POSTS: ${{ vars.TWEET_CADENCE_MIN_HOURS_BETWEEN_POSTS }}
+      TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS: ${{ vars.TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS || '36' }}
+      TWEET_CADENCE_TOPIC_TIMING_WINDOW_HOURS: ${{ vars.TWEET_CADENCE_TOPIC_TIMING_WINDOW_HOURS || '1.5' }}
+      X_API_USAGE_TRACKING_ENABLED: ${{ vars.X_API_USAGE_TRACKING_ENABLED || 'true' }}
+      X_API_USAGE_FILE: .github/runtime/x-api-usage.json
+      X_API_COST_READ: ${{ vars.X_API_COST_READ || '0.05' }}
+      X_API_COST_TWEET_CREATE: ${{ vars.X_API_COST_TWEET_CREATE || '0.015' }}
+      X_API_COST_MEDIA_UPLOAD: ${{ vars.X_API_COST_MEDIA_UPLOAD || '0.015' }}
+      X_API_RUNWAY_GUARD_ENABLED: ${{ vars.X_API_RUNWAY_GUARD_ENABLED || 'true' }}
+      X_API_RUNWAY_LOOKBACK_DAYS: ${{ vars.X_API_RUNWAY_LOOKBACK_DAYS || '7' }}
+      X_API_RUNWAY_MAINTENANCE_RUNS_PER_DAY: ${{ vars.X_API_RUNWAY_MAINTENANCE_RUNS_PER_DAY || '1' }}
+      X_API_RUNWAY_MIN_DAYS: ${{ vars.X_API_RUNWAY_MIN_DAYS || '3' }}
+      X_API_CREDITS_CIRCUIT_BREAKER_ENABLED: ${{ vars.X_API_CREDITS_CIRCUIT_BREAKER_ENABLED || 'true' }}
+      X_API_CREDITS_CIRCUIT_TTL_HOURS: ${{ vars.X_API_CREDITS_CIRCUIT_TTL_HOURS || '24' }}
+      TWEET_CONTENT_FORMAT_IDS: ${{ vars.TWEET_CONTENT_FORMAT_IDS || 'prediction,decision_rule,brutal_truth,sharp_question' }}
+      TWEET_FORMAT_BASE_ALLOCATION: ${{ vars.TWEET_FORMAT_BASE_ALLOCATION || 'prediction=0.65,decision_rule=0.20,brutal_truth=0.12,sharp_question=0.03' }}
+      TWEET_GROWTH_EXPLORE_FORMAT_ID: ${{ vars.TWEET_GROWTH_EXPLORE_FORMAT_ID || 'brutal_truth' }}
+      TWEET_IMAGE_ENABLED: ${{ vars.TWEET_IMAGE_ENABLED || 'false' }}
+      DASHBOARD_DAILY_REPLY_TARGET: ${{ vars.DASHBOARD_DAILY_REPLY_TARGET || '3' }}
+      X_ACCESS_TOKEN_CACHE_FILE: .github/runtime/x-access-token.json
+      X_CLIENT_ID: ${{ secrets.X_CLIENT_ID }}
+      X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET }}
+      X_OAUTH2_REFRESH_TOKEN: ${{ secrets.X_OAUTH2_REFRESH_TOKEN }}
+      X_OAUTH2_REFRESH_TOKEN_REPO: ${{ secrets.X_OAUTH2_REFRESH_TOKEN }}
+      X_REFRESH_TOKEN_OUT_FILE: .github/runtime/x-refresh-token.txt
+      TWEET_ARCHIVE_FILE: archive/tweets.jsonl
+      GROWTH_REPORT_FILE: .github/runtime/growth-report.md
+      TWEET_GROWTH_STRATEGY_ENABLED: ${{ vars.TWEET_GROWTH_STRATEGY_ENABLED || 'true' }}
+      TWEET_GROWTH_STRATEGY_FILE: .github/runtime/growth-strategy.json
+      GROWTH_STRATEGY_PUBLIC_FILE: ${{ vars.GROWTH_STRATEGY_PUBLIC_FILE || 'reports/growth-strategy.json' }}
+      GROWTH_EVOLUTION_FILE: .github/runtime/growth-evolution.jsonl
+      GROWTH_EVOLUTION_PUBLIC_FILE: ${{ vars.GROWTH_EVOLUTION_PUBLIC_FILE || 'reports/growth-evolution.jsonl' }}
+      TWEET_ANALYTICS_PUBLIC_FILE: ${{ vars.TWEET_ANALYTICS_PUBLIC_FILE || 'reports/tweet-analytics.json' }}
+      GROWTH_REPORT_PUBLIC_FILE: ${{ vars.GROWTH_REPORT_PUBLIC_FILE || 'reports/growth-report.md' }}
+      DAILY_REPLY_FILE: .github/runtime/daily-replies.md
+      DAILY_REPLY_PUBLIC_FILE: ${{ vars.DAILY_REPLY_PUBLIC_FILE || 'reports/daily-replies.md' }}
+      DASHBOARD_DATA_FILE: .github/runtime/dashboard-data.json
+      DASHBOARD_SYNC_REPO: ${{ vars.DASHBOARD_SYNC_REPO || 'Linus-Shyu/Linus-Shyu.github.io' }}
+      DASHBOARD_SYNC_PATHS: ${{ vars.DASHBOARD_SYNC_PATHS || 'xbot-dashboard/data.json,docs/xbot-dashboard/data.json' }}
+      DASHBOARD_SYNC_REQUIRED: ${{ vars.DASHBOARD_SYNC_REQUIRED || 'true' }}
+      DASHBOARD_SYNC_GITHUB_TOKEN: ${{ secrets.DASHBOARD_SYNC_GITHUB_TOKEN }}
+      TWEET_SYNC_GITHUB_TOKEN: ${{ secrets.TWEET_SYNC_GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Restore learning cache
+        id: restore-learning
+        uses: actions/cache/restore@v5
+        with:
+          path: .github/runtime
+          key: x-bot-learning-maintenance-${{ github.run_id }}
+          restore-keys: |
+            x-bot-learning-
+            x-bot-runtime-
+
+      - name: Restore token cache
+        id: restore-tokens
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            .github/runtime/x-refresh-token.txt
+            .github/runtime/x-access-token.json
+          key: x-bot-tokens-maintenance-${{ github.run_id }}
+          restore-keys: |
+            x-bot-tokens-
+
+      - name: Ensure runtime directory exists
+        run: mkdir -p .github/runtime
+
+      - name: Load cached x refresh token
+        shell: bash
+        run: |
+          if [ -f .github/runtime/x-refresh-token.invalid.json ]; then
+            echo "Detected invalid refresh-token marker; ignoring cached token."
+            rm -f .github/runtime/x-refresh-token.txt
+          fi
+
+          if [ -s .github/runtime/x-refresh-token.txt ]; then
+            token="$(tr -d '\r\n\t ' < .github/runtime/x-refresh-token.txt)"
+            if [ -n "$token" ]; then
+              echo "::add-mask::$token"
+              echo "X_OAUTH2_REFRESH_TOKEN_CACHE=$token" >> "$GITHUB_ENV"
+              echo "Injected cached X refresh token."
+            fi
+          fi
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: latest
+
+      - name: Zero-read local fallback self-test
+        env:
+          TWEET_SELF_TEST: local_fallback
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: X API cost governor self-test
+        env:
+          TWEET_SELF_TEST: cost_governor
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Cached learning loop self-test
+        env:
+          TWEET_SELF_TEST: learning_loop
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Cached hourly load timing self-test
+        env:
+          TWEET_SELF_TEST: hourly_load
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Dashboard data validator self-test
+        run: node .github/scripts/validate-dashboard-data.mjs --self-test
+
+      - name: Refresh metrics and write growth report
+        id: maintenance
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Purge stale runtime cache after OAuth cache failure
+        if: always() && steps.maintenance.outputs.purge_runtime_cache == 'true'
+        env:
+          MAINTENANCE_OUTCOME: ${{ steps.maintenance.outcome }}
+        run: |
+          bash .github/scripts/purge-actions-cache.sh
+          if [ "$MAINTENANCE_OUTCOME" = "success" ]; then
+            rm -f .github/runtime/x-refresh-token.invalid.json
+            echo "Purged stale remote runtime caches; keeping any fresh local runtime token files."
+          else
+            rm -f .github/runtime/x-refresh-token.txt \
+                  .github/runtime/x-access-token.json \
+                  .github/runtime/x-refresh-token.invalid.json
+          fi
+
+      - name: Commit growth report to this repository
+        if: success()
+        shell: bash
+        run: |
+          report_source="${GROWTH_REPORT_FILE:-.github/runtime/growth-report.md}"
+          report_target="${GROWTH_REPORT_PUBLIC_FILE:-reports/growth-report.md}"
+
+          if [ ! -s "$report_source" ]; then
+            echo "No growth report generated at $report_source; skipping repository report publish."
+            exit 0
+          fi
+
+          branch="${GITHUB_REF_NAME:-main}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Maintenance writes only to .github/runtime; copy into reports/ after
+          # rebase so tracked files are never dirty during git rebase/push.
+          git fetch origin "$branch"
+          git rebase --autostash "origin/$branch"
+
+          mkdir -p "$(dirname "$report_target")"
+          cp "$report_source" "$report_target"
+          git add "$report_target"
+
+          daily_reply_source="${DAILY_REPLY_FILE:-.github/runtime/daily-replies.md}"
+          daily_reply_target="${DAILY_REPLY_PUBLIC_FILE:-reports/daily-replies.md}"
+          if [ -s "$daily_reply_source" ]; then
+            mkdir -p "$(dirname "$daily_reply_target")"
+            cp "$daily_reply_source" "$daily_reply_target"
+            git add "$daily_reply_target"
+          else
+            echo "No daily route plan generated at $daily_reply_source; skipping daily route publish."
+          fi
+
+          strategy_source="${TWEET_GROWTH_STRATEGY_FILE:-.github/runtime/growth-strategy.json}"
+          strategy_target="${GROWTH_STRATEGY_PUBLIC_FILE:-reports/growth-strategy.json}"
+          if [ -s "$strategy_source" ]; then
+            mkdir -p "$(dirname "$strategy_target")"
+            cp "$strategy_source" "$strategy_target"
+            git add "$strategy_target"
+          fi
+
+          evolution_source="${GROWTH_EVOLUTION_FILE:-.github/runtime/growth-evolution.jsonl}"
+          evolution_target="${GROWTH_EVOLUTION_PUBLIC_FILE:-reports/growth-evolution.jsonl}"
+          if [ -s "$evolution_source" ]; then
+            mkdir -p "$(dirname "$evolution_target")"
+            cp "$evolution_source" "$evolution_target"
+            git add "$evolution_target"
+          fi
+
+          analytics_source="${TWEET_ANALYTICS_FILE:-.github/runtime/tweet-analytics.json}"
+          analytics_target="${TWEET_ANALYTICS_PUBLIC_FILE:-reports/tweet-analytics.json}"
+          if [ -s "$analytics_source" ]; then
+            mkdir -p "$(dirname "$analytics_target")"
+            cp "$analytics_source" "$analytics_target"
+            git add "$analytics_target"
+          fi
+
+          if git diff --staged --quiet; then
+            echo "No growth report changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore: update growth report $(date -u +%Y-%m-%dT%H:%MZ)"
+
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$branch"; then
+              exit 0
+            fi
+            echo "Push failed; rebasing and retrying ($attempt/3)."
+            git fetch origin "$branch"
+            git rebase --autostash "origin/$branch"
+          done
+
+          echo "Failed to push growth report after retries."
+          exit 1
+
+      - name: Sync dashboard data to blog
+        if: success()
+        shell: bash
+        run: bash .github/scripts/sync-dashboard-to-blog.sh
+
+      - name: Check token cache worth saving
+        id: token-cache
+        if: always()
+        run: |
+          if [ -f .github/runtime/x-refresh-token.txt ] || [ -f .github/runtime/x-access-token.json ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping token cache save; no usable OAuth files."
+          fi
+
+      - name: Save token cache
+        if: always() && steps.token-cache.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .github/runtime/x-refresh-token.txt
+            .github/runtime/x-access-token.json
+          key: x-bot-tokens-maintenance-${{ github.run_id }}
+
+      - name: Check learning cache worth saving
+        id: learning-cache
+        if: always()
+        run: |
+          if [ -f .github/runtime/rss-state.json ] || \
+             [ -f .github/runtime/x-api-budget.json ] || \
+             [ -f .github/runtime/tweet-history.json ] || \
+             [ -f .github/runtime/story-verdict-cache.json ] || \
+             [ -f .github/runtime/tweet-analytics.json ] || \
+             [ -f .github/runtime/openai-usage.json ] || \
+             [ -f .github/runtime/x-api-usage.json ] || \
+             [ -f .github/runtime/growth-strategy.json ] || \
+             [ -f .github/runtime/growth-evolution.jsonl ] || \
+             [ -f .github/runtime/growth-report.md ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping learning cache save; no learning state files to persist."
+          fi
+
+      - name: Save learning cache
+        if: always() && steps.learning-cache.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: .github/runtime
+          key: x-bot-learning-maintenance-${{ github.run_id }}
