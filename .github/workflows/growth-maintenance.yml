@@ -106,7 +106,7 @@ jobs:
       X_API_CREDITS_CIRCUIT_BREAKER_ENABLED: ${{ vars.X_API_CREDITS_CIRCUIT_BREAKER_ENABLED || 'true' }}
       X_API_CREDITS_CIRCUIT_TTL_HOURS: ${{ vars.X_API_CREDITS_CIRCUIT_TTL_HOURS || '24' }}
       TWEET_WEEKLY_CONTROL_FORMAT_ID: ${{ vars.TWEET_WEEKLY_CONTROL_FORMAT_ID || 'decision_rule' }}
-      TWEET_FOLLOWERS_OVERRIDE: ${{ vars.TWEET_FOLLOWERS_OVERRIDE || '' }}
+      TWEET_FOLLOWERS_OVERRIDE: ${{ vars.TWEET_FOLLOWERS_OVERRIDE || '86' }}
       TWEET_CONTENT_FORMAT_IDS: ${{ vars.TWEET_CONTENT_FORMAT_IDS || 'prediction,decision_rule,brutal_truth,sharp_question' }}
       TWEET_FORMAT_BASE_ALLOCATION: ${{ vars.TWEET_FORMAT_BASE_ALLOCATION || 'prediction=0.65,decision_rule=0.20,brutal_truth=0.12,sharp_question=0.03' }}
       TWEET_GROWTH_EXPLORE_FORMAT_ID: ${{ vars.TWEET_GROWTH_EXPLORE_FORMAT_ID || 'brutal_truth' }}

@@ -1078,14 +1078,30 @@ async function persistTweetAnalytics(state) {
 
 function classifyRunEvent(message, type = "info") {
   const text = `${type} ${message || ""}`.toLowerCase();
+  // Successful publishes are not failures; keep them out of failureStats buckets.
+  if (/^(posted|auto_reply)$/i.test(String(type || "")) || /\b(tweet|packet|auto-\w+)\s+posted\b/.test(text)) {
+    return "publish";
+  }
   if (/oauth|refresh token|access token|unauthorized|client secret/.test(text)) return "x_auth";
   if (/openai|quota|model|empty tweet/.test(text)) return "openai";
   if (/rss|feed|story|no post-worthy|weak story/.test(text)) return "content";
-  if (/budget|spend|cost/.test(text)) return "budget";
+  if (/budget|spend|cost|runway|safe cap/.test(text)) return "budget";
   if (/quality|rejected|gate/.test(text)) return "quality";
-  if (/x create|tweet post|media|upload|api/.test(text)) return "x_api";
-  if (/peak|window|schedule/.test(text)) return "schedule";
+  if (/credits depleted|402/.test(text)) return "credits_depleted";
+  if (/x create|media|upload|api/.test(text)) return "x_api";
+  if (/peak|window|schedule|cadence/.test(text)) return "schedule";
   return "other";
+}
+
+function isFailureRunEvent(event) {
+  const type = String(event?.type || "").toLowerCase();
+  if (["posted", "auto_reply", "info", "ok", "success"].includes(type)) return false;
+  if (["skip", "error", "maintenance_degraded", "budget_downgrade"].includes(type)) return true;
+  const category = String(event?.category || "").toLowerCase();
+  if (category === "publish") return false;
+  const message = String(event?.message || "").toLowerCase();
+  if (/\b(tweet|packet|auto-\w+)\s+posted\b/.test(message)) return false;
+  return Boolean(type || message);
 }
 
 async function recordRunEvent(type, message, details = {}) {
@@ -6180,7 +6196,7 @@ async function runAutoReplies(accessToken) {
       replyText: draft.text,
     });
     await recordRunEvent("auto_reply", `auto-${action} posted: ${replyId || "unknown id"}`, {
-      category: "x_api",
+      category: "publish",
       targetTweetId: candidate.id,
       replyId,
       action,
@@ -6837,22 +6853,26 @@ function buildPacketReviewWindow({ state, insights, hours, now = new Date().toIS
 function buildRunFailureStats(state, now = new Date().toISOString()) {
   const nowMs = Number.isFinite(Date.parse(now)) ? Date.parse(now) : Date.now();
   const cutoff = nowMs - 7 * 24 * 60 * 60 * 1000;
-  const events = (state.runEvents || [])
-    .filter((event) => {
-      const createdAt = Date.parse(event?.createdAt || "");
-      return Number.isFinite(createdAt) && createdAt >= cutoff;
-    });
+  const windowEvents = (state.runEvents || []).filter((event) => {
+    const createdAt = Date.parse(event?.createdAt || "");
+    return Number.isFinite(createdAt) && createdAt >= cutoff;
+  });
+  // Only count skips / errors / degradations — never successful publishes.
+  const events = windowEvents.filter((event) => isFailureRunEvent(event));
   const buckets = {};
   for (const event of events) {
     const message = String(event.message || "").toLowerCase();
-    const category = event.category || "other";
+    const category = event.category || classifyRunEvent(event.message, event.type) || "other";
     const reason =
+      /credits depleted|402/.test(message) || category === "credits_depleted" ? "credits_depleted" :
       /quality|gate|weak|post-worthy|low value/.test(message) ? "quality_gate" :
-      /budget|runway|safe cap/.test(message) ? "budget_guard" :
-      /oauth|auth|token/.test(message) ? "x_auth" :
-      /cadence|daily target|interval|peak/.test(message) ? "cadence" :
-      /rss|feed|story|news/.test(message) ? "source_ingest" :
+      /budget|runway|safe cap/.test(message) || category === "budget" ? "budget_guard" :
+      /oauth|auth|token/.test(message) || category === "x_auth" ? "x_auth" :
+      /cadence|daily target|interval|peak|outside peak/.test(message) || category === "schedule" ? "cadence" :
+      /rss|feed|story|news|no hybrid|no post-worthy/.test(message) || category === "content" ? "source_ingest" :
+      category === "publish" ? null :
       category;
+    if (!reason || reason === "publish") continue;
     const bucket = buckets[reason] || { reason, count: 0, lastAt: null, samples: [] };
     bucket.count += 1;
     bucket.lastAt = !bucket.lastAt || Date.parse(event.createdAt || "") > Date.parse(bucket.lastAt || "") ? event.createdAt : bucket.lastAt;
@@ -6866,6 +6886,7 @@ function buildRunFailureStats(state, now = new Date().toISOString()) {
     estimatedXReadOps: 0,
     lookbackDays: 7,
     totalEvents: events.length,
+    scannedEvents: windowEvents.length,
     topReasons: ranked.slice(0, 8),
     primaryReason: ranked[0] || null,
   };
@@ -23019,7 +23040,7 @@ async function main() {
     await refreshTweetAnalytics(accessToken);
   }
   await recordRunEvent("posted", `tweet posted: ${tweetId || "unknown id"}`, {
-    category: "x_api",
+    category: "publish",
     tweetId,
     hasMedia: Boolean(mediaId),
     source: selectedStory?.source || null,

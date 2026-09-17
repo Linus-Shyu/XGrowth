@@ -170,7 +170,7 @@ Designed to work on a hard **$5 X API** monthly cap with **zero automatic paid r
 | Keep maintenance on `dashboard_only` | **$0** | Rebuilds reports + dashboard from cache |
 | Post only in peak slots (ZH `12`, EN `13/16/21` UTC) | write only | Language is slot-locked |
 | Complete **3 manual route replies** from the dashboard Tasks panel | **$0** | Browser paste; no X search/read API |
-| Fix active-conn count with `TWEET_FOLLOWERS_OVERRIDE` | **$0** | Never auto-run `USER_ME` just to refresh the number |
+| Fix active-conn count with `TWEET_FOLLOWERS_OVERRIDE` (default `86`) | **$0** | Never auto-run `USER_ME` just to refresh the number; bump the Variable when the real count changes |
 | Keep weekly control arm = `decision_rule` | $0 extra | Treatment formats compare against this baseline |
 | Run `live_snapshot` / `metrics_report` **manually only** | paid | Only when you consciously spend remaining credits |
 
@@ -193,6 +193,7 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `X_API_MONTHLY_BUDGET_USD` | `5` | Hard monthly spend ceiling |
 | `X_API_BUDGET_SAFETY_RATIO` | `0.85` | Leave headroom under the $5 cap |
 | `TWEET_WEEKLY_CONTROL_FORMAT_ID` | `decision_rule` | Fixed weekly control arm |
+| `TWEET_FOLLOWERS_OVERRIDE` | `86` | Free active-conn correction; bump when the real count changes |
 | `TWEET_CONTENT_FORMAT_IDS` | `prediction,decision_rule,brutal_truth,sharp_question` | Match measured winners |
 | `TWEET_FORMAT_BASE_ALLOCATION` | `0.65 / 0.20 / 0.12 / 0.03` | Stable mix, not vibes |
 | `TWEET_GROWTH_MIN_SAMPLES` | `10` | Stop fake “self-evolution” |
