@@ -3,12 +3,7 @@ name: bun scheduled tweet
 on:
   workflow_dispatch:
   # Schedules are intentionally omitted in the public template.
-  # Uncomment after secrets are configured (timezone-locked ZH/EN traffic windows):
-  # schedule:
-  #   - cron: "0 12 * * *"   # ZH China evening Beijing 20:00
-  #   - cron: "0 13 * * *"   # EN US East morning ~09:00 EDT
-  #   - cron: "0 16 * * *"   # EN US East lunch ~12:00 EDT
-  #   - cron: "0 21 * * *"   # EN US East evening / West afternoon
+  # Add your own cron after configuring secrets — see README ($5 success path).
 
 permissions:
   contents: write
@@ -43,7 +38,10 @@ jobs:
       TWEET_TEXT: ${{ vars.TWEET_TEXT }}
       TWEET_IMAGE_ENABLED: ${{ vars.TWEET_IMAGE_ENABLED || 'false' }}
       X_API_MONTHLY_BUDGET_USD: ${{ vars.X_API_MONTHLY_BUDGET_USD || '5' }}
+      X_API_BUDGET_SAFETY_RATIO: ${{ vars.X_API_BUDGET_SAFETY_RATIO || '0.85' }}
       X_API_MIN_HOURS_BETWEEN_POSTS: ${{ vars.X_API_MIN_HOURS_BETWEEN_POSTS || '0' }}
+      TWEET_WEEKLY_CONTROL_FORMAT_ID: ${{ vars.TWEET_WEEKLY_CONTROL_FORMAT_ID || 'decision_rule' }}
+      TWEET_FOLLOWERS_OVERRIDE: ${{ vars.TWEET_FOLLOWERS_OVERRIDE || '' }}
       TWEET_DAILY_IMAGE_MODE: ${{ vars.TWEET_DAILY_IMAGE_MODE || 'off' }}
       TWEET_DAILY_IMAGE_UTC_HOUR: ${{ vars.TWEET_DAILY_IMAGE_UTC_HOUR || '16' }}
       TWEET_IMAGE_MAX_PER_DAY: ${{ vars.TWEET_IMAGE_MAX_PER_DAY || '0' }}

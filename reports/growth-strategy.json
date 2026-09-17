@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-09-17T01:29:00.964Z",
+  "generatedAt": "2026-09-17T15:28:37.512Z",
   "mode": "self_evolving_daily_traffic",
   "status": "insufficient_recent_samples",
   "source": "cached tweet analytics",
@@ -10,14 +10,6 @@
   "baselineScore": 4.2,
   "sampleCount": 22,
   "formatWeights": {
-    "not_x_but_y": 1,
-    "second_order": 1,
-    "prediction": 1.08,
-    "operator_pain": 1,
-    "contrarian_cost": 1,
-    "sharp_question": 1,
-    "playbook": 1,
-    "decision_rule": 1,
     "brutal_truth": 1,
     "massive_value_drop": 1,
     "myth_busting": 1,
@@ -53,23 +45,30 @@
   },
   "evolution": {
     "utcDay": "2026-09-17",
-    "frozen": true,
-    "parentGeneratedAt": "2026-09-16T01:29:41.291Z",
+    "frozen": false,
+    "parentGeneratedAt": "2026-09-17T01:29:00.964Z",
     "mutations": [
       {
         "type": "wait",
         "formatId": null,
-        "reason": "No measured posts in the last 24h; keep current weights."
+        "reason": "Need 10+ measured posts in the last 7d before mutating weights (have 0)."
       }
     ]
   },
   "promotedFormats": [
     {
-      "id": "prediction",
+      "id": "the_hard_way",
       "action": "promote",
-      "avgScore": 5,
-      "samples": 7,
-      "liftPct": 18.7
+      "avgScore": 8.5,
+      "samples": 1,
+      "liftPct": 101.7
+    },
+    {
+      "id": "myth_busting",
+      "action": "promote",
+      "avgScore": 2.3,
+      "samples": 1,
+      "liftPct": -46.2
     }
   ],
   "holdFormats": [],
@@ -112,7 +111,7 @@
     "blockedFallbackAllowed": false,
     "minSpecificity": "company_or_product_plus_consequence"
   },
-  "nextAction": "Exploit prediction while keeping one controlled exploration candidate (brutal_truth).",
+  "nextAction": "Exploit the_hard_way while keeping one controlled exploration candidate (brutal_truth).",
   "recent7dScore": 0,
   "recentSampleCount": 0,
   "languageBias": {

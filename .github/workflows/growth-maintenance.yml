@@ -12,9 +12,8 @@ on:
           - dashboard_only
           - live_snapshot
           - metrics_report
-  # Schedules omitted in the public template. Enable after secrets + dashboard sync are configured:
-  # schedule:
-  #   - cron: "10 */2 * * *"   # free dashboard_only publish (0 X reads)
+  # Schedules are intentionally omitted in the public template.
+  # After secrets are set, add: cron "10 */2 * * *" for free dashboard_only sync.
 
 permissions:
   contents: write
@@ -86,14 +85,17 @@ jobs:
       TWEET_FOLLOWUP_DRAFT_REUSE_HOURS: ${{ vars.TWEET_FOLLOWUP_DRAFT_REUSE_HOURS || '20' }}
       TWEET_CADENCE_CONTROLLER_ENABLED: ${{ vars.TWEET_CADENCE_CONTROLLER_ENABLED || 'true' }}
       TWEET_CADENCE_ENFORCEMENT: ${{ vars.TWEET_CADENCE_ENFORCEMENT || 'budget_guard' }}
-      TWEET_CADENCE_DAILY_POST_TARGET: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET || '4' }}
-      TWEET_CADENCE_DAILY_POST_TARGET_EN: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_EN || '3' }}
+      TWEET_CADENCE_DAILY_POST_TARGET: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET || '1' }}
+      TWEET_CADENCE_DAILY_POST_TARGET_EN: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_EN || '1' }}
       TWEET_CADENCE_DAILY_POST_TARGET_ZH: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET_ZH || '1' }}
       TWEET_CADENCE_MIN_HOURS_BETWEEN_POSTS: ${{ vars.TWEET_CADENCE_MIN_HOURS_BETWEEN_POSTS }}
       TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS: ${{ vars.TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS || '36' }}
       TWEET_CADENCE_TOPIC_TIMING_WINDOW_HOURS: ${{ vars.TWEET_CADENCE_TOPIC_TIMING_WINDOW_HOURS || '1.5' }}
       X_API_USAGE_TRACKING_ENABLED: ${{ vars.X_API_USAGE_TRACKING_ENABLED || 'true' }}
       X_API_USAGE_FILE: .github/runtime/x-api-usage.json
+      X_API_MONTHLY_BUDGET_USD: ${{ vars.X_API_MONTHLY_BUDGET_USD || '5' }}
+      X_API_BUDGET_SAFETY_RATIO: ${{ vars.X_API_BUDGET_SAFETY_RATIO || '0.85' }}
+      X_API_BUDGET_FILE: .github/runtime/x-api-budget.json
       X_API_COST_READ: ${{ vars.X_API_COST_READ || '0.05' }}
       X_API_COST_TWEET_CREATE: ${{ vars.X_API_COST_TWEET_CREATE || '0.015' }}
       X_API_COST_MEDIA_UPLOAD: ${{ vars.X_API_COST_MEDIA_UPLOAD || '0.015' }}
@@ -103,10 +105,13 @@ jobs:
       X_API_RUNWAY_MIN_DAYS: ${{ vars.X_API_RUNWAY_MIN_DAYS || '3' }}
       X_API_CREDITS_CIRCUIT_BREAKER_ENABLED: ${{ vars.X_API_CREDITS_CIRCUIT_BREAKER_ENABLED || 'true' }}
       X_API_CREDITS_CIRCUIT_TTL_HOURS: ${{ vars.X_API_CREDITS_CIRCUIT_TTL_HOURS || '24' }}
+      TWEET_WEEKLY_CONTROL_FORMAT_ID: ${{ vars.TWEET_WEEKLY_CONTROL_FORMAT_ID || 'decision_rule' }}
+      TWEET_FOLLOWERS_OVERRIDE: ${{ vars.TWEET_FOLLOWERS_OVERRIDE || '' }}
       TWEET_CONTENT_FORMAT_IDS: ${{ vars.TWEET_CONTENT_FORMAT_IDS || 'prediction,decision_rule,brutal_truth,sharp_question' }}
       TWEET_FORMAT_BASE_ALLOCATION: ${{ vars.TWEET_FORMAT_BASE_ALLOCATION || 'prediction=0.65,decision_rule=0.20,brutal_truth=0.12,sharp_question=0.03' }}
       TWEET_GROWTH_EXPLORE_FORMAT_ID: ${{ vars.TWEET_GROWTH_EXPLORE_FORMAT_ID || 'brutal_truth' }}
       TWEET_IMAGE_ENABLED: ${{ vars.TWEET_IMAGE_ENABLED || 'false' }}
+      DASHBOARD_EXPERIMENT_POST_SLOTS: ${{ vars.DASHBOARD_EXPERIMENT_POST_SLOTS || '2' }}
       DASHBOARD_DAILY_REPLY_TARGET: ${{ vars.DASHBOARD_DAILY_REPLY_TARGET || '3' }}
       X_ACCESS_TOKEN_CACHE_FILE: .github/runtime/x-access-token.json
       X_CLIENT_ID: ${{ secrets.X_CLIENT_ID }}

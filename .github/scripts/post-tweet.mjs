@@ -6935,7 +6935,8 @@ function topLearnedHashtags(insights, limit = 4) {
 }
 
 function buildLowCostExperimentPlan({ insights, experimentPlan, languageTracks, now = new Date().toISOString() }) {
-  const formats = (experimentPlan?.recommendedFormats || []).slice(0, 2);
+  const controlFormatId = experimentPlan?.controlFormatId || weeklyControlFormatId();
+  const formats = (experimentPlan?.recommendedFormats || []).filter((row) => row.id !== controlFormatId).slice(0, 2);
   const tags = topLearnedHashtags(insights, 4);
   const languagePrimary = buildLanguageMixDecision(languageTracks).primary;
   const arms = [
@@ -6943,9 +6944,9 @@ function buildLowCostExperimentPlan({ insights, experimentPlan, languageTracks, 
       id: "hook_format",
       label: "Hook format A/B",
       armA: formats[0]?.id || "operator_pain",
-      armB: formats[1]?.id || "decision_rule",
+      armB: controlFormatId,
       metric: "24h score + replies",
-      nextAction: "Alternate the first line pattern inside the same language rail; do not add X reads.",
+      nextAction: `Treat ${controlFormatId} as the fixed weekly control arm; swap only the treatment hook. Do not add X reads.`,
     },
     {
       id: "hashtag_pair",
@@ -7184,18 +7185,23 @@ function experimentFormatRows(insights) {
 }
 
 function buildExperimentPlan({ insights, usage, budgetState } = {}) {
-  const requestedSlots = integerEnv("DASHBOARD_EXPERIMENT_POST_SLOTS", 3, 1, 12);
-  const exploreRate = numberEnv("DASHBOARD_EXPERIMENT_EXPLORE_RATE", 0.25, 0, 0.8);
+  // Under a $5 X API cap, prefer 2 measured post slots max unless explicitly raised.
+  const requestedSlots = integerEnv("DASHBOARD_EXPERIMENT_POST_SLOTS", 2, 1, 12);
+  const exploreRate = numberEnv("DASHBOARD_EXPERIMENT_EXPLORE_RATE", 0.2, 0, 0.8);
+  const controlFormatId = weeklyControlFormatId();
   const rows = experimentFormatRows(insights || { templates: {}, minSamples: 2, baselineScore: 0 });
   const apiCap = monthlyBudgetUsd();
   const safeCap = apiCap * budgetSafetyRatio();
   const trackedSpend = Number(usage?.totalEstimatedUsd ?? budgetState?.spentUsd) || 0;
   const textCost = estimatedPostCost(false);
   const remaining = apiCap > 0 ? Math.max(0, safeCap - trackedSpend) : null;
+  // Keep ~3 text posts of headroom inside the safe cap before opening experiment slots.
+  const reserveUsd = numberEnv("DASHBOARD_EXPERIMENT_RESERVE_USD", Math.max(textCost * 3, 0.05), 0, 5);
+  const spendable = remaining == null ? null : Math.max(0, remaining - reserveUsd);
   const budgetSafeSlots =
-    remaining == null || textCost <= 0
+    spendable == null || textCost <= 0
       ? requestedSlots
-      : Math.max(0, Math.min(requestedSlots, Math.floor(remaining / textCost)));
+      : Math.max(0, Math.min(requestedSlots, Math.floor(spendable / textCost)));
   const exploreSlots = budgetSafeSlots > 1 ? Math.min(Math.max(1, Math.round(budgetSafeSlots * exploreRate)), budgetSafeSlots) : 0;
   const exploitSlots = Math.max(0, budgetSafeSlots - exploreSlots);
   const exploitPool = rows.filter((row) => row.action === "exploit" || row.action === "test");
@@ -7209,21 +7215,50 @@ function buildExperimentPlan({ insights, usage, budgetState } = {}) {
     if (!next) break;
     recommended.push(next);
   }
+  // Always keep a fixed weekly control arm so treatment formats have a stable baseline.
+  if (!recommended.some((row) => row.id === controlFormatId)) {
+    const controlRow =
+      rows.find((row) => row.id === controlFormatId) || {
+        id: controlFormatId,
+        label: compactBucketName(controlFormatId),
+        action: "control",
+        avgScore: Number(insights?.baselineScore) || 0,
+        samples: 0,
+        reason: "Fixed weekly control arm under the $5 budget plan.",
+      };
+    if (recommended.length < Math.max(1, budgetSafeSlots)) {
+      recommended.push(controlRow);
+    } else if (recommended.length) {
+      recommended[recommended.length - 1] = controlRow;
+    } else {
+      recommended.push(controlRow);
+    }
+  }
 
   return {
     slots: requestedSlots,
-    budgetSafeSlots,
+    budgetSafeSlots: Math.max(budgetSafeSlots, recommended.length ? 1 : 0),
     exploreSlots,
     exploitSlots,
+    controlFormatId,
+    weeklyControlArm: {
+      id: controlFormatId,
+      label: compactBucketName(controlFormatId),
+      role: "control",
+      cadence: "weekly_fixed",
+      reason: `Keep ${controlFormatId} as the stable control arm; compare treatment formats against it without raising the $5 X API cap.`,
+    },
+    reserveUsd: roundUsd(reserveUsd),
     textPostCostUsd: roundUsd(textCost),
     safeRemainingUsd: remaining == null ? null : roundUsd(remaining),
+    monthlyBudgetUsd: apiCap,
     baselineScore: Number((Number(insights?.baselineScore) || 0).toFixed(1)),
     minSamples: Number(insights?.minSamples) || 0,
     recommendedFormats: recommended.map((row, index) => ({
       slot: index + 1,
       id: row.id,
       label: row.label,
-      action: row.action,
+      action: row.id === controlFormatId ? "control" : row.action,
       avgScore: row.avgScore,
       samples: row.samples,
       reason: row.reason,
@@ -7242,8 +7277,8 @@ function buildExperimentPlan({ insights, usage, budgetState } = {}) {
       .slice(0, 3)
       .map((row) => ({ id: row.id, label: row.label, avgScore: row.avgScore, samples: row.samples })),
     decision: budgetSafeSlots <= 0
-      ? "Budget guard blocks new post experiments; keep manual route ops only."
-      : `Run ${budgetSafeSlots} post experiment(s): ${recommended.map((row) => row.id).join(", ") || "manual route ops only"}.`,
+      ? `Budget guard blocks new post experiments under the $${formatNumber(apiCap, 2)} cap; keep ${controlFormatId} control + manual route ops only.`
+      : `Run ${Math.max(budgetSafeSlots, recommended.length ? 1 : 0)} post experiment(s) with fixed control=${controlFormatId}: ${recommended.map((row) => row.id).join(", ") || "manual route ops only"}.`,
   };
 }
 
@@ -10574,6 +10609,266 @@ function buildDailyExecutionConsole({
     rows,
     copyBlock,
   };
+}
+
+function buildOperatorTasks({
+  operatorPasteQueue = null,
+  actions = [],
+  drafts = [],
+  opportunities = [],
+  languageTracks = null,
+  now = new Date().toISOString(),
+} = {}) {
+  const targetReplies = Math.min(
+    3,
+    Number(operatorPasteQueue?.targetReplies) || integerEnv("DASHBOARD_DAILY_REPLY_TARGET", 3, 1, 20),
+  );
+  const pasteTasks = Array.isArray(operatorPasteQueue?.tasks) ? operatorPasteQueue.tasks.filter((task) => task.ready) : [];
+  const draftTexts = (drafts || []).map((draft) => draft.text || draft).filter(Boolean);
+  const tasks = [];
+
+  tasks.push({
+    id: "ops-banner-check",
+    kind: "check",
+    priority: 0,
+    title: "Check ops banner / credits before spending",
+    titleZh: "先看顶栏：credits / 冷却 / 是否还能发帖",
+    detail: "If credits are depleted, skip posting and only do manual browser replies.",
+    detailZh: "若 credits 耗尽，今天只做网页手动回复，不要触发任何付费 X 读取。",
+    openUrl: null,
+    copyText: null,
+    zeroExtraXReads: true,
+    estimatedIncrementalXApiUsd: 0,
+  });
+
+  for (let index = 0; index < targetReplies; index += 1) {
+    const paste = pasteTasks[index] || null;
+    const action = actions[index] || null;
+    const opportunity = opportunities[index] || null;
+    const draftText = paste?.pastePayload || draftTexts[Math.min(index, Math.max(0, draftTexts.length - 1))] || "";
+    const openUrl = paste?.openUrl || action?.url || opportunity?.routeUrl || null;
+    const routeLabel = paste?.routeLabel || action?.label || opportunity?.routeLabel || `Route ${index + 1}`;
+    tasks.push({
+      id: paste?.id || `reply-${index + 1}`,
+      kind: "manual_reply",
+      priority: index + 1,
+      title: `Reply #${index + 1}: ${routeLabel}`,
+      titleZh: `回复 #${index + 1}：${routeLabel}`,
+      detail: paste?.reason || action?.reason || opportunity?.reason || "Open a fresh technical thread and paste one useful reply.",
+      detailZh: paste?.reason || action?.reason || opportunity?.reason || "打开一条仍在讨论的高信号帖，粘贴一条有用回复。",
+      openUrl,
+      copyText: draftText || null,
+      editRule: paste?.editRule || "Only edit nouns/timing for the target thread.",
+      skipRule: paste?.skipRule || "Skip stale, political, or low-signal threads.",
+      zeroExtraXReads: true,
+      estimatedIncrementalXApiUsd: 0,
+    });
+  }
+
+  const zhTrack = (languageTracks?.tracks || []).find((track) => track.id === "zh");
+  const enTrack = (languageTracks?.tracks || []).find((track) => track.id === "en");
+  tasks.push({
+    id: "language-roi-review",
+    kind: "review",
+    priority: targetReplies + 1,
+    title: "Review ZH vs EN rail before next post",
+    titleZh: "发帖前看一眼中英轨道谁更赚",
+    detail: `ZH traffic7d=${formatNumber(zhTrack?.traffic7d || 0)}, EN traffic7d=${formatNumber(enTrack?.traffic7d || 0)}. Keep posting only in the scheduled language slot.`,
+    detailZh: `中文 7 日触达 ${formatNumber(zhTrack?.traffic7d || 0)}，英文 ${formatNumber(enTrack?.traffic7d || 0)}。只在对应时区窗口发对应语言。`,
+    openUrl: null,
+    copyText: null,
+    zeroExtraXReads: true,
+    estimatedIncrementalXApiUsd: 0,
+  });
+
+  return {
+    generatedAt: now,
+    mode: "zero_read_operator_tasks",
+    zeroExtraXReads: true,
+    estimatedXReadOps: 0,
+    estimatedIncrementalXApiUsd: 0,
+    targetReplies,
+    budgetUsdCap: monthlyBudgetUsd(),
+    monthlyBudgetNote: "Stay inside the $5 X API monthly cap; these tasks cost $0.",
+    tasks,
+  };
+}
+
+function buildLanguageRoi({ languageTracks = null, insights = null, now = new Date().toISOString() } = {}) {
+  const tracks = Array.isArray(languageTracks?.tracks) ? languageTracks.tracks : [];
+  const rows = tracks.map((track) => {
+    const posts = Number(track.packetsLast7d) || 0;
+    const traffic = Number(track.traffic7d) || 0;
+    const ack = Number(track.ack7d) || 0;
+    const avgScore = Number(track.avgScore) || 0;
+    const trafficPerPost = posts > 0 ? traffic / posts : 0;
+    const ackRate = traffic > 0 ? ack / traffic : 0;
+    return {
+      id: track.id,
+      label: track.label,
+      windowLabel: track.windowLabel,
+      utcHours: track.utcHours || [],
+      posts7d: posts,
+      traffic7d: traffic,
+      ack7d: ack,
+      avgScore,
+      trafficPerPost: Number(trafficPerPost.toFixed(1)),
+      ackRatePct: Number((ackRate * 100).toFixed(2)),
+      status: track.status || "scheduled",
+      nextWindow: track.nextWindow || null,
+      recommendation:
+        posts <= 0
+          ? "No measured posts yet on this rail; keep the scheduled slot and judge after n≥3."
+          : trafficPerPost >= 20 || avgScore >= (Number(insights?.baselineScore) || 0)
+            ? "Keep this rail at its timezone peak; it is earning relative to volume."
+            : "Do not add volume; keep one peak slot and improve hooks before spending credits.",
+    };
+  });
+  const ranked = [...rows].sort((left, right) => {
+    const leftScore = left.trafficPerPost * 2 + left.avgScore;
+    const rightScore = right.trafficPerPost * 2 + right.avgScore;
+    return rightScore - leftScore;
+  });
+  const winner = ranked.find((row) => row.posts7d > 0) || ranked[0] || null;
+  return {
+    generatedAt: now,
+    mode: "zero_read_language_roi",
+    zeroExtraXReads: true,
+    estimatedXReadOps: 0,
+    estimatedIncrementalXApiUsd: 0,
+    winnerId: winner?.id || null,
+    winnerLabel: winner?.label || null,
+    summary: winner
+      ? `${winner.label} currently leads on cached 7d efficiency (traffic/post ${formatNumber(winner.trafficPerPost, 1)}, score ${formatNumber(winner.avgScore, 1)}).`
+      : "Waiting for language-track samples.",
+    tracks: rows,
+  };
+}
+
+function buildOpsBanner({
+  usage = null,
+  cooldown = null,
+  creditsCircuit = null,
+  creditsDepleted = false,
+  growthDecision = null,
+  accountSnapshotCache = null,
+  now = new Date().toISOString(),
+} = {}) {
+  const failure = growthDecision?.failureStats?.primaryReason || null;
+  const spent = Number(usage?.totalEstimatedUsd) || 0;
+  const cap = monthlyBudgetUsd();
+  const remaining = Math.max(0, cap - spent);
+  const snapshotStale = accountSnapshotCache?.due === true || accountSnapshotCache?.fresh === false;
+
+  if (creditsDepleted || cooldown?.reasonCode === "credits_depleted" || creditsCircuit?.active) {
+    return {
+      active: true,
+      severity: "danger",
+      code: "credits_depleted",
+      title: "X credits depleted — posting and paid reads paused",
+      titleZh: "X credits 已耗尽 — 发帖与付费读取已暂停",
+      detail: cooldown?.reason || creditsCircuit?.reason || "Wait for credits to recover; keep doing $0 manual route replies.",
+      detailZh: "等 credits 恢复前，只做网页手动回复；看板继续免费同步缓存。",
+      until: cooldown?.until || creditsCircuit?.until || null,
+      spendUsd: roundUsd(spent),
+      capUsd: cap,
+      remainingUsd: 0,
+      zeroExtraXReads: true,
+      generatedAt: now,
+    };
+  }
+
+  if (cooldown?.active) {
+    return {
+      active: true,
+      severity: cooldown.severity || "warn",
+      code: cooldown.reasonCode || "cooldown",
+      title: `X API cooldown: ${cooldown.reasonCode || "active"}`,
+      titleZh: `X API 冷却中：${cooldown.reasonCode || "active"}`,
+      detail: cooldown.reason || "Live X reads/writes are paused.",
+      detailZh: cooldown.reason || "付费 X 读写已暂停。",
+      until: cooldown.until || null,
+      spendUsd: roundUsd(spent),
+      capUsd: cap,
+      remainingUsd: roundUsd(remaining),
+      zeroExtraXReads: true,
+      generatedAt: now,
+    };
+  }
+
+  if (cap > 0 && remaining <= Math.max(0.15, cap * 0.05)) {
+    return {
+      active: true,
+      severity: "warn",
+      code: "budget_low",
+      title: `Budget low: $${formatNumber(remaining, 2)} of $${formatNumber(cap, 2)} left`,
+      titleZh: `预算偏低：$${formatNumber(cap, 2)} 中仅剩 $${formatNumber(remaining, 2)}`,
+      detail: "Prefer dashboard_only + manual replies. Do not run live_snapshot unless necessary.",
+      detailZh: "优先免费看板同步和手动回复；非必要不要跑 live_snapshot。",
+      until: null,
+      spendUsd: roundUsd(spent),
+      capUsd: cap,
+      remainingUsd: roundUsd(remaining),
+      zeroExtraXReads: true,
+      generatedAt: now,
+    };
+  }
+
+  if (failure?.reason) {
+    return {
+      active: true,
+      severity: "warn",
+      code: "recent_failures",
+      title: `Recent skip reason: ${failure.reason}`,
+      titleZh: `最近跳过原因：${failure.reason}`,
+      detail: Array.isArray(failure.samples) && failure.samples[0] ? String(failure.samples[0]).slice(0, 240) : "Check growthDecision.failureStats.",
+      detailZh: Array.isArray(failure.samples) && failure.samples[0] ? String(failure.samples[0]).slice(0, 240) : "查看 growthDecision.failureStats。",
+      until: null,
+      spendUsd: roundUsd(spent),
+      capUsd: cap,
+      remainingUsd: roundUsd(remaining),
+      zeroExtraXReads: true,
+      generatedAt: now,
+    };
+  }
+
+  if (snapshotStale) {
+    return {
+      active: true,
+      severity: "info",
+      code: "follower_snapshot_stale",
+      title: "Active-conn snapshot is stale (still $0 to ignore)",
+      titleZh: "粉丝快照偏旧（可继续忽略，不花钱）",
+      detail: "Set TWEET_FOLLOWERS_OVERRIDE to the confirmed count when you want the dashboard number corrected without USER_ME_LOOKUP.",
+      detailZh: "若要免费校正粉丝数，设置 TWEET_FOLLOWERS_OVERRIDE=当前粉丝数，不要跑付费 USER_ME。",
+      until: null,
+      spendUsd: roundUsd(spent),
+      capUsd: cap,
+      remainingUsd: roundUsd(remaining),
+      zeroExtraXReads: true,
+      generatedAt: now,
+    };
+  }
+
+  return {
+    active: false,
+    severity: "ok",
+    code: "nominal",
+    title: "Ops nominal under the $5 monthly cap",
+    titleZh: "运行正常，仍在 $5 月预算内",
+    detail: "Use scheduled language slots + manual replies. Paid metrics stay manual-only.",
+    detailZh: "按中英峰时发帖，并完成手动回复；付费指标刷新仅手动。",
+    until: null,
+    spendUsd: roundUsd(spent),
+    capUsd: cap,
+    remainingUsd: roundUsd(remaining),
+    zeroExtraXReads: true,
+    generatedAt: now,
+  };
+}
+
+function weeklyControlFormatId() {
+  return optionalEnv("TWEET_WEEKLY_CONTROL_FORMAT_ID", "decision_rule") || "decision_rule";
 }
 
 function buildOperatorPasteQueue({
@@ -15651,6 +15946,24 @@ function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, 
   const estimatedSafeRemaining = Math.max(0, apiCap * budgetSafetyRatio() - apiSpend);
   const availableRemaining = creditsDepleted ? 0 : estimatedRemaining;
   const availableSafeRemaining = creditsDepleted ? 0 : estimatedSafeRemaining;
+  const operatorTasks = buildOperatorTasks({
+    operatorPasteQueue,
+    actions,
+    drafts,
+    opportunities,
+    languageTracks,
+    now,
+  });
+  const languageRoi = buildLanguageRoi({ languageTracks, insights, now });
+  const opsBanner = buildOpsBanner({
+    usage,
+    cooldown,
+    creditsCircuit,
+    creditsDepleted,
+    growthDecision,
+    accountSnapshotCache,
+    now,
+  });
 
   const dashboardData = {
     version: 1,
@@ -15658,9 +15971,12 @@ function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, 
     telemetry: buildDashboardTelemetry({ state, usage, now }),
     mode: {
       label: "Zero extra X API",
-      description: "Web search links + manual route outputs.",
+      description: "Web search links + manual route outputs. Stay inside the $5 monthly X API cap.",
     },
     languageTracks,
+    languageRoi,
+    opsBanner,
+    operatorTasks,
     growthDecision,
     growthStrategy: selfEvolvingStrategy,
     profile: {
@@ -16870,7 +17186,8 @@ function monthlyBudgetUsd() {
 }
 
 function budgetSafetyRatio() {
-  return numberEnv("X_API_BUDGET_SAFETY_RATIO", 0.9, 0.5, 1);
+  // Leave ~15% headroom under a $5 monthly X API cap so one surprise read cannot blow the ledger.
+  return numberEnv("X_API_BUDGET_SAFETY_RATIO", 0.85, 0.5, 1);
 }
 
 function estimatedPostCost(hasMedia) {
