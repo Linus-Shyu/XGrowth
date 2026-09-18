@@ -5,13 +5,16 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 
-# Force GitHub Linguist to count the bot as JavaScript.
-# Most source lives under .github/scripts as .mjs; without this, language stats
-# often stay empty because docs/JSONL dominate and large .mjs can be skipped.
+# Programming languages GitHub should show on the language bar.
+# This repo is intentionally JS + Shell (+ workflow YAML) — no Python/Go/etc.
 *.mjs linguist-language=JavaScript linguist-detectable=true linguist-generated=false
+*.sh linguist-language=Shell linguist-detectable=true linguist-generated=false
+*.yml linguist-language=YAML linguist-detectable=true
+*.yaml linguist-language=YAML linguist-detectable=true
 .github/scripts/** linguist-detectable=true linguist-generated=false
+.github/workflows/** linguist-detectable=true
 
-# Keep non-code artifacts out of the language bar
+# Keep non-code artifacts out of the language bar so they don't hide Shell/YAML
 *.md linguist-documentation=true
 docs/** linguist-documentation=true
 reports/** linguist-documentation=true
