@@ -1,5 +1,22 @@
+# Line endings
 *.mjs text eol=lf
 *.md text eol=lf
 *.sh text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# Force GitHub Linguist to count the bot as JavaScript.
+# Most source lives under .github/scripts as .mjs; without this, language stats
+# often stay empty because docs/JSONL dominate and large .mjs can be skipped.
+*.mjs linguist-language=JavaScript linguist-detectable=true linguist-generated=false
+.github/scripts/** linguist-detectable=true linguist-generated=false
+
+# Keep non-code artifacts out of the language bar
+*.md linguist-documentation=true
+docs/** linguist-documentation=true
+reports/** linguist-documentation=true
+examples/** linguist-documentation=true
+archive/** linguist-documentation=true
+*.json linguist-documentation=true
+*.jsonl linguist-documentation=true
+docs/images/** linguist-vendored=true
