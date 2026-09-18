@@ -4,16 +4,35 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Maintenance mode. dashboard_only is free (cached only). live_snapshot/metrics_report spend X API credits."
+        description: "Maintenance mode. dashboard_only is free. clear_credits_circuit clears stale 402 after recharge. operator_log writes today's task completions. live_snapshot/metrics_report spend credits."
         required: false
         default: dashboard_only
         type: choice
         options:
           - dashboard_only
+          - clear_credits_circuit
+          - operator_log
           - live_snapshot
           - metrics_report
-  # Schedules are intentionally omitted in the public template.
-  # After secrets are set, add: cron "10 */2 * * *" for free dashboard_only sync.
+      completed_task_ids:
+        description: "For operator_log: comma-separated task ids completed today"
+        required: false
+        default: ""
+      reply_engagement:
+        description: "For operator_log: overall reply engagement"
+        required: false
+        default: unknown
+        type: choice
+        options:
+          - unknown
+          - none
+          - some
+          - strong
+      notes:
+        description: "For operator_log: optional notes"
+        required: false
+        default: ""
+  # Schedules omitted in public template. Add cron after secrets.
 
 permissions:
   contents: write
@@ -223,6 +242,10 @@ jobs:
         env:
           # Default is free cache-only publish. Paid modes are manual workflow_dispatch only.
           TWEET_MAINTENANCE_MODE: ${{ inputs.mode || 'dashboard_only' }}
+          OPERATOR_COMPLETED_TASK_IDS: ${{ inputs.completed_task_ids || '' }}
+          OPERATOR_REPLY_ENGAGEMENT: ${{ inputs.reply_engagement || 'unknown' }}
+          OPERATOR_LOG_NOTES: ${{ inputs.notes || '' }}
+          X_API_CLEAR_CREDITS_REASON: manual_recharge_confirmed
         run: bun .github/scripts/post-tweet.mjs
 
       - name: Purge stale runtime cache after OAuth cache failure
@@ -289,6 +312,10 @@ jobs:
             mkdir -p "$(dirname "$evolution_target")"
             cp "$evolution_source" "$evolution_target"
             git add "$evolution_target"
+          fi
+
+          if [ -s reports/operator-task-log.jsonl ]; then
+            git add reports/operator-task-log.jsonl
           fi
 
           analytics_source="${TWEET_ANALYTICS_FILE:-.github/runtime/tweet-analytics.json}"

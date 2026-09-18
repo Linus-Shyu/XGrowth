@@ -18,6 +18,10 @@
 **Live ops dashboard:** [linusshyu.dev/xbot-dashboard](https://linusshyu.dev/xbot-dashboard/)  
 **Author:** [Linus Shyu](https://linusshyu.dev/portfolio/)
 
+<p align="center">
+  <img alt="XGrowth dashboard preview" src="docs/images/dashboard-preview.png" width="920" />
+</p>
+
 ---
 
 ## Why this exists
@@ -173,6 +177,20 @@ Designed to work on a hard **$5 X API** monthly cap with **zero automatic paid r
 | Fix active-conn count with `TWEET_FOLLOWERS_OVERRIDE` (default `86`) | **$0** | Never auto-run `USER_ME` just to refresh the number; bump the Variable when the real count changes |
 | Keep weekly control arm = `decision_rule` | $0 extra | Treatment formats compare against this baseline |
 | Run `live_snapshot` / `metrics_report` **manually only** | paid | Only when you consciously spend remaining credits |
+| After recharging X credits | **$0** | Actions → `growth maintenance` → `clear_credits_circuit` **or** `bun scheduled tweet` with `clear_credits_circuit=true` |
+| Log today's completed reply tasks | **$0** | Dashboard → Copy operator log → Actions → `operator_log` |
+
+```mermaid
+flowchart LR
+  A[Fork + 4 secrets] --> B[Authorize X once]
+  B --> C[dashboard_only sync]
+  C --> D[Post at ZH/EN peaks]
+  D --> E[3 manual reply tasks]
+  E --> F[operator_log writeback]
+  F --> C
+  G[Recharge credits] --> H[clear_credits_circuit]
+  H --> D
+```
 
 Default guardrails shipped for this budget:
 

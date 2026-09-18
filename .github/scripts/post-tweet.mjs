@@ -6,6 +6,7 @@ import {
   loadBuildInPublicNotes,
   systemPromptForLanguage,
 } from "./tweet-content-pipeline.mjs";
+import { existsSync, readFileSync } from "node:fs";
 
 // OpenAI-compatible LLM endpoint. Defaults to DeepSeek to keep tweet generation cheap.
 const DEFAULT_LLM_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
@@ -530,6 +531,7 @@ function selectContentFormats({
   angleLoadRouter = null,
   growthOpportunityScorer = null,
   growthStrategy = null,
+  languageCode = null,
 } = {}) {
   const formats = configuredContentFormats();
   const fixed = optionalEnv("TWEET_CONTENT_FORMAT_ID");
@@ -547,7 +549,7 @@ function selectContentFormats({
     growthOpportunityScorer?.activeOpportunity?.formatId,
     ...(growthOpportunityScorer?.lanes || []).map((lane) => lane.formatId),
   ].filter(Boolean);
-  const strategyIds = rankFormatIdsByGrowthStrategy(growthStrategy, formats);
+  const strategyIds = rankFormatIdsByGrowthStrategy(growthStrategy, formats, languageCode);
   const holdIds = new Set((growthStrategy?.holdFormats || []).map((row) => row.id).filter(Boolean));
   const bandit = contentBanditAllocator ||
     (performanceInsights?.records?.length ? buildContentBanditAllocator({ insights: performanceInsights }) : null);
@@ -1266,13 +1268,17 @@ function evaluateXCreditsCircuit(usage = {}, now = new Date()) {
   const currentMs = Number.isFinite(nowMs) ? nowMs : Date.now();
   const ttlHours = xApiCreditsCircuitTtlHours();
   let latest = null;
+  let expiredStale402 = false;
 
   for (const [endpoint, value] of Object.entries(usage?.endpoints || {})) {
     const status = normalizedStatusCode(value?.lastStatus);
     if (status !== 402 && classifyXApiCooldownStatus(status) !== "credits_depleted") continue;
     const failureMs = endpointCreditsFailureMs(value, usage);
     if (!failureMs) continue;
-    if (currentMs - failureMs > ttlHours * 3600 * 1000) continue;
+    if (currentMs - failureMs > ttlHours * 3600 * 1000) {
+      expiredStale402 = true;
+      continue;
+    }
     const candidate = {
       active: true,
       endpoint,
@@ -1284,7 +1290,15 @@ function evaluateXCreditsCircuit(usage = {}, now = new Date()) {
     if (!latest || Date.parse(candidate.since) > Date.parse(latest.since)) latest = candidate;
   }
 
-  if (!latest) return { active: false, reason: "No recent X credits-depleted signal." };
+  if (!latest) {
+    return {
+      active: false,
+      reason: expiredStale402
+        ? `Previous 402 is older than the ${ttlHours}h credits circuit TTL; treating credits as recovered until the next live X response.`
+        : "No recent X credits-depleted signal.",
+      recoveredAfterTtl: expiredStale402,
+    };
+  }
   return {
     ...latest,
     reason: `X API credits depleted on ${latest.endpoint} (HTTP ${latest.status}); pausing paid X writes/reads for ~${latest.remainingHours}h until ${latest.until}.`,
@@ -1578,6 +1592,152 @@ async function persistXApiUsageState(state) {
       2,
     )}\n`,
   );
+}
+
+async function clearCreditsCircuitLedger({ reason = "operator_clear" } = {}) {
+  const usage = await readXApiUsageState();
+  const now = new Date().toISOString();
+  let cleared = 0;
+  for (const [endpoint, value] of Object.entries(usage.endpoints || {})) {
+    const status = normalizedStatusCode(value?.lastStatus);
+    if (status !== 402 && classifyXApiCooldownStatus(status) !== "credits_depleted") continue;
+    usage.endpoints[endpoint] = {
+      ...value,
+      lastStatus: 200,
+      recoveredAt: now,
+      recoveryReason: reason,
+      previousFailureAt: value.lastFailureAt || value.lastCalledAt || usage.updatedAt || null,
+      previousStatus: status,
+    };
+    cleared += 1;
+  }
+  if (cleared > 0) {
+    usage.creditsCircuitClearedAt = now;
+    usage.creditsCircuitClearReason = reason;
+    await persistXApiUsageState(usage);
+  }
+  await recordRunEvent("info", `credits circuit cleared (${cleared} endpoint(s)): ${reason}`, {
+    category: "credits_recovered",
+    cleared,
+    reason,
+  });
+  return { cleared, at: now, reason, usage };
+}
+
+function operatorTaskLogFile() {
+  return optionalEnv("OPERATOR_TASK_LOG_FILE", "reports/operator-task-log.jsonl");
+}
+
+async function appendOperatorTaskLog(entry) {
+  const file = operatorTaskLogFile();
+  await ensureParentDirectory(file);
+  const existing = await readTextFileIfExists(file);
+  await writeTextFile(file, `${existing || ""}${JSON.stringify(entry)}\n`);
+  return file;
+}
+
+async function readOperatorTaskLog(limit = 60) {
+  const file = operatorTaskLogFile();
+  const text = await readTextFileIfExists(file);
+  if (!text) return [];
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .slice(-Math.max(1, limit));
+}
+
+function readOperatorTaskLogSync(limit = 60) {
+  try {
+    const file = operatorTaskLogFile();
+    if (!existsSync(file)) return [];
+    return String(readFileSync(file, "utf8") || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .slice(-Math.max(1, limit));
+  } catch {
+    return [];
+  }
+}
+
+function buildOperatorTaskLogSummary(entries = [], now = new Date().toISOString()) {
+  const day = String(now).slice(0, 10);
+  const today = entries.filter((entry) => String(entry.day || entry.createdAt || "").slice(0, 10) === day);
+  const completedIds = [...new Set(today.flatMap((entry) => entry.completedTaskIds || []))];
+  const engagementCounts = { none: 0, some: 0, strong: 0, unknown: 0 };
+  for (const entry of today) {
+    const key = ["none", "some", "strong"].includes(entry.engagement) ? entry.engagement : "unknown";
+    engagementCounts[key] += 1;
+  }
+  return {
+    generatedAt: now,
+    zeroExtraXReads: true,
+    estimatedXReadOps: 0,
+    day,
+    entriesToday: today.length,
+    completedTaskIds: completedIds,
+    engagementCounts,
+    latest: today[today.length - 1] || entries[entries.length - 1] || null,
+    recent: entries.slice(-10),
+  };
+}
+
+async function runClearCreditsCircuitMaintenance() {
+  markDashboardTelemetryCached("clear_credits_circuit");
+  const result = await clearCreditsCircuitLedger({
+    reason: optionalEnv("X_API_CLEAR_CREDITS_REASON", "manual_recharge_confirmed"),
+  });
+  console.log(
+    `Cleared credits circuit ledger for ${result.cleared} endpoint(s) at ${result.at}. Next post/maintenance will treat credits as recovered until a fresh 402.`,
+  );
+  await writeGrowthReport();
+  console.log("clear_credits_circuit maintenance complete.");
+  return result;
+}
+
+async function runOperatorLogMaintenance() {
+  markDashboardTelemetryCached("operator_log");
+  const now = new Date().toISOString();
+  const completedTaskIds = String(optionalEnv("OPERATOR_COMPLETED_TASK_IDS", ""))
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const engagementRaw = optionalEnv("OPERATOR_REPLY_ENGAGEMENT", "unknown").toLowerCase();
+  const engagement = ["none", "some", "strong", "unknown"].includes(engagementRaw) ? engagementRaw : "unknown";
+  const notes = optionalEnv("OPERATOR_LOG_NOTES", "").slice(0, 500);
+  const entry = {
+    createdAt: now,
+    day: now.slice(0, 10),
+    completedTaskIds,
+    engagement,
+    notes: notes || null,
+    source: "workflow_dispatch",
+    zeroExtraXReads: true,
+  };
+  const file = await appendOperatorTaskLog(entry);
+  console.log(
+    `Operator log appended to ${file}: completed=${completedTaskIds.length || 0}, engagement=${engagement}.`,
+  );
+  await writeGrowthReport();
+  console.log("operator_log maintenance complete.");
+  return entry;
 }
 
 async function recordXApiUsage({ endpoint, status, ok, costUsd }) {
@@ -2314,6 +2474,7 @@ function emptyGrowthStrategy(now = new Date().toISOString()) {
     baselineScore: 0,
     sampleCount: 0,
     formatWeights: {},
+    formatWeightsByLanguage: { en: {}, zh: {} },
     exploreFormatId: null,
     dailyDigest: null,
     evolution: null,
@@ -2544,10 +2705,15 @@ function shouldFreezeDailyEvolution(previous, now) {
   return Boolean(previousDay) && previousDay === utcDayStampFromValue(now);
 }
 
-function rankFormatIdsByGrowthStrategy(growthStrategy, formats = configuredContentFormats()) {
+function rankFormatIdsByGrowthStrategy(growthStrategy, formats = configuredContentFormats(), languageCode = null) {
   if (!growthStrategy) return [];
+  const lang = normalizeLanguageCode(languageCode);
+  const languageWeights =
+    (lang && growthStrategy.formatWeightsByLanguage?.[lang]) ||
+    null;
   const hasSignal =
     (growthStrategy.formatWeights && Object.keys(growthStrategy.formatWeights).length) ||
+    (languageWeights && Object.keys(languageWeights).length) ||
     (growthStrategy.promotedFormats || []).length ||
     growthStrategy.exploreFormatId;
   if (!hasSignal) return [];
@@ -2559,7 +2725,8 @@ function rankFormatIdsByGrowthStrategy(growthStrategy, formats = configuredConte
     .map((format, index) => ({
       id: format.id,
       score:
-        clampFormatWeight(weights[format.id] ?? 1) * 25 +
+        clampFormatWeight(weights[format.id] ?? 1) * 18 +
+        clampFormatWeight(languageWeights?.[format.id] ?? 1) * 14 +
         (promoted.has(format.id) ? 40 : 0) +
         (format.id === explore ? 16 : 0) +
         (hold.has(format.id) ? -60 : 0) -
@@ -2754,6 +2921,53 @@ function evolveGrowthStrategy({
       : "insufficient_recent_samples";
   const winningHook = digest?.winningHooks?.[0]?.firstLine || "";
   const strategy = emptyGrowthStrategy(now);
+  const formatWeightsByLanguage = {};
+  for (const code of ["en", "zh"]) {
+    const langRecords = recent7d.filter((record) => normalizeLanguageCode(record.language) === code && record.templateId);
+    const langWeights = { ...defaultFormatWeights(), ...((seed.formatWeightsByLanguage || {})[code] || {}) };
+    for (const id of formatIds) langWeights[id] = clampFormatWeight(langWeights[id]);
+    if (langRecords.length >= Math.max(3, Math.ceil(minSamples / 2))) {
+      const byFormat = new Map();
+      for (const record of langRecords) {
+        const id = record.templateId;
+        if (!formatIds.includes(id)) continue;
+        const bucket = byFormat.get(id) || { scores: [] };
+        bucket.scores.push(recordGrowthScore(record));
+        byFormat.set(id, bucket);
+      }
+      const ranked = [...byFormat.entries()]
+        .map(([id, bucket]) => ({
+          id,
+          avg: bucket.scores.reduce((sum, value) => sum + value, 0) / Math.max(1, bucket.scores.length),
+          samples: bucket.scores.length,
+        }))
+        .sort((left, right) => right.avg - left.avg);
+      if (ranked[0] && ranked[0].samples >= 2) {
+        const before = langWeights[ranked[0].id];
+        langWeights[ranked[0].id] = clampFormatWeight(before * 1.12);
+        mutations.push({
+          type: `language_promote_${code}`,
+          formatId: ranked[0].id,
+          from: before,
+          to: langWeights[ranked[0].id],
+          reason: `${code.toUpperCase()} rail prefers ${ranked[0].id} (avg ${formatNumber(ranked[0].avg, 1)}, n=${ranked[0].samples}).`,
+        });
+      }
+      if (ranked.length > 1 && ranked[ranked.length - 1].samples >= 2 && ranked[ranked.length - 1].id !== ranked[0].id) {
+        const loser = ranked[ranked.length - 1];
+        const before = langWeights[loser.id];
+        langWeights[loser.id] = clampFormatWeight(before * 0.9);
+        mutations.push({
+          type: `language_hold_${code}`,
+          formatId: loser.id,
+          from: before,
+          to: langWeights[loser.id],
+          reason: `${code.toUpperCase()} rail de-emphasizes ${loser.id}.`,
+        });
+      }
+    }
+    formatWeightsByLanguage[code] = Object.fromEntries(formatIds.map((id) => [id, clampFormatWeight(langWeights[id])]));
+  }
 
   return {
     ...strategy,
@@ -2768,6 +2982,7 @@ function evolveGrowthStrategy({
     sampleCount: records.length,
     recentSampleCount: recent7d.length,
     formatWeights: Object.fromEntries(formatIds.map((id) => [id, clampFormatWeight(weights[id])])),
+    formatWeightsByLanguage,
     exploreFormatId,
     dailyDigest: digest || null,
     promotedFormats: promotedIds.map((id) => strategyRowForId(id, "promote", [...(digest?.formatRows24h || []), ...formatRows])),
@@ -10788,8 +11003,8 @@ function buildOpsBanner({
       code: "credits_depleted",
       title: "X credits depleted — posting and paid reads paused",
       titleZh: "X credits 已耗尽 — 发帖与付费读取已暂停",
-      detail: cooldown?.reason || creditsCircuit?.reason || "Wait for credits to recover; keep doing $0 manual route replies.",
-      detailZh: "等 credits 恢复前，只做网页手动回复；看板继续免费同步缓存。",
+      detail: `${cooldown?.reason || creditsCircuit?.reason || "Wait for credits to recover."} After recharge: run growth maintenance mode=clear_credits_circuit (or post with clear_credits_circuit=true).`,
+      detailZh: "等 credits 恢复后：Actions → growth maintenance → clear_credits_circuit，或发帖时勾选 clear_credits_circuit。恢复前只做网页手动回复。",
       until: cooldown?.until || creditsCircuit?.until || null,
       spendUsd: roundUsd(spent),
       capUsd: cap,
@@ -15985,6 +16200,7 @@ function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, 
     accountSnapshotCache,
     now,
   });
+  const operatorTaskLog = buildOperatorTaskLogSummary(readOperatorTaskLogSync(80), now);
 
   const dashboardData = {
     version: 1,
@@ -15998,6 +16214,7 @@ function buildDashboardData({ state, insights, usage, budgetState, openAIUsage, 
     languageRoi,
     opsBanner,
     operatorTasks,
+    operatorTaskLog,
     growthDecision,
     growthStrategy: selfEvolvingStrategy,
     profile: {
@@ -20615,6 +20832,7 @@ async function composeTweet({
     angleLoadRouter,
     growthOpportunityScorer,
     growthStrategy,
+    languageCode: language?.code || null,
   });
   const cachedGenerationPolicy = buildCachedGenerationPolicy({
     generationStack,
@@ -22481,6 +22699,14 @@ function liveSnapshotMaintenanceMode(mode = maintenanceMode()) {
   return ["live_snapshot", "account_snapshot", "live_dashboard"].includes(mode);
 }
 
+function clearCreditsCircuitMaintenanceMode(mode = maintenanceMode()) {
+  return ["clear_credits_circuit", "credits_recover", "clear_402"].includes(mode);
+}
+
+function operatorLogMaintenanceMode(mode = maintenanceMode()) {
+  return ["operator_log", "task_log"].includes(mode);
+}
+
 function markDashboardTelemetryCached(reason) {
   process.env.DASHBOARD_CACHED_TELEMETRY_REASON = reason;
 }
@@ -22651,6 +22877,19 @@ async function runLiveSnapshotMaintenance() {
 
 async function runGrowthMaintenance() {
   const mode = maintenanceMode();
+  if (clearCreditsCircuitMaintenanceMode(mode)) {
+    await runClearCreditsCircuitMaintenance();
+    return;
+  }
+  if (operatorLogMaintenanceMode(mode)) {
+    await runOperatorLogMaintenance();
+    return;
+  }
+  if (isTruthy(optionalEnv("X_API_CLEAR_CREDITS_CIRCUIT", "false"))) {
+    await clearCreditsCircuitLedger({
+      reason: optionalEnv("X_API_CLEAR_CREDITS_REASON", "manual_recharge_confirmed"),
+    });
+  }
   if (dashboardOnlyMaintenanceMode(mode)) {
     markDashboardTelemetryCached(mode);
     console.log(
@@ -22750,6 +22989,12 @@ async function main() {
 
   if (await runSelfTestIfRequested()) {
     return;
+  }
+
+  if (isTruthy(optionalEnv("X_API_CLEAR_CREDITS_CIRCUIT", "false")) && !maintenanceMode()) {
+    await clearCreditsCircuitLedger({
+      reason: optionalEnv("X_API_CLEAR_CREDITS_REASON", "manual_recharge_before_post"),
+    });
   }
 
   if (maintenanceMode()) {

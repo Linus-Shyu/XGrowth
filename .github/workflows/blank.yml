@@ -2,8 +2,13 @@ name: bun scheduled tweet
 
 on:
   workflow_dispatch:
-  # Schedules are intentionally omitted in the public template.
-  # Add your own cron after configuring secrets — see README ($5 success path).
+    inputs:
+      clear_credits_circuit:
+        description: "Set true after recharging X credits to clear the local 24h 402 circuit before posting"
+        required: false
+        default: false
+        type: boolean
+  # Schedules omitted in public template. See README peak windows.
 
 permissions:
   contents: write
@@ -266,6 +271,9 @@ jobs:
       # 3. 运行你的核心发推脚本
       - name: Generate and post tweet
         id: post-tweet
+        env:
+          X_API_CLEAR_CREDITS_CIRCUIT: ${{ inputs.clear_credits_circuit == true && 'true' || 'false' }}
+          X_API_CLEAR_CREDITS_REASON: manual_recharge_before_post
         run: bun .github/scripts/post-tweet.mjs
 
       - name: Purge stale runtime cache after OAuth failure

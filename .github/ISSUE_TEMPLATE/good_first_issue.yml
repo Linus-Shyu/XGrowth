@@ -1,0 +1,34 @@
+name: Good first issue
+description: Small contribution ideas for new contributors
+title: "[good first issue] "
+labels: ["good first issue", "help wanted"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - docs
+        - rss-feeds
+        - dashboard-i18n
+        - examples
+        - tests
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What should change?
+      description: Keep it small enough for a first PR (roughly under 2 hours).
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ] Docs or code change is scoped and tested locally
+        - [ ] No secrets or runtime credentials are committed
+        - [ ] README / examples stay accurate if touched
+    validations:
+      required: true
