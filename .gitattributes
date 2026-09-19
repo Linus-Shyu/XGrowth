@@ -5,21 +5,24 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 
-# Programming languages GitHub should show on the language bar.
-# This repo is intentionally JS + Shell (+ workflow YAML) — no Python/Go/etc.
-*.mjs linguist-language=JavaScript linguist-detectable=true linguist-generated=false
-*.sh linguist-language=Shell linguist-detectable=true linguist-generated=false
-*.yml linguist-language=YAML linguist-detectable=true
-*.yaml linguist-language=YAML linguist-detectable=true
-.github/scripts/** linguist-detectable=true linguist-generated=false
-.github/workflows/** linguist-detectable=true
+# GitHub Linguist vendors ALL of `.github/` by default (vendor.yml),
+# which hides this repo's real languages because the code lives there.
+# Un-vendor scripts/workflows so the language bar can show JS + Shell + YAML.
+.github/scripts/** -linguist-vendored linguist-detectable
+.github/workflows/** -linguist-vendored linguist-detectable
 
-# Keep non-code artifacts out of the language bar so they don't hide Shell/YAML
-*.md linguist-documentation=true
-docs/** linguist-documentation=true
-reports/** linguist-documentation=true
-examples/** linguist-documentation=true
-archive/** linguist-documentation=true
-*.json linguist-documentation=true
-*.jsonl linguist-documentation=true
-docs/images/** linguist-vendored=true
+# Explicit language classification
+*.mjs linguist-language=JavaScript linguist-detectable
+*.sh linguist-language=Shell linguist-detectable
+*.yml linguist-language=YAML linguist-detectable
+*.yaml linguist-language=YAML linguist-detectable
+
+# Keep non-code artifacts out of the language bar
+*.md linguist-documentation
+docs/** linguist-documentation
+reports/** linguist-documentation
+examples/** linguist-documentation
+archive/** linguist-documentation
+*.json linguist-documentation
+*.jsonl linguist-documentation
+docs/images/** linguist-vendored
