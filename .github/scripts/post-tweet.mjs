@@ -1035,6 +1035,7 @@ function normalizeAnalyticsState(parsed) {
             : [],
         }
       : { updatedAt: null, records: [] };
+  const maxRecords = integerEnv("TWEET_ANALYTICS_MAX_RECORDS", 250, 20, 2000);
   state.tweets = Array.isArray(parsed.tweets)
     ? parsed.tweets
         .filter((item) => item?.id)
@@ -1049,7 +1050,18 @@ function normalizeAnalyticsState(parsed) {
               ? item.latestMetrics
               : null,
         }))
-        .slice(0, integerEnv("TWEET_ANALYTICS_MAX_RECORDS", 250, 20, 2000))
+        // Keep newest posts when over cap — oldest-first slice dropped archive seeds.
+        .sort(
+          (left, right) =>
+            Date.parse(right.postedAt || right.createdAt || 0) -
+            Date.parse(left.postedAt || left.createdAt || 0),
+        )
+        .slice(0, maxRecords)
+        .sort(
+          (left, right) =>
+            Date.parse(left.postedAt || left.createdAt || 0) -
+            Date.parse(right.postedAt || right.createdAt || 0),
+        )
     : [];
 
   return state;
@@ -1936,7 +1948,7 @@ async function seedTweetAnalyticsFromArchive(state) {
         metricsSnapshots: [],
         latestMetrics: null,
         workflowRunUrl: entry.workflowRunUrl || null,
-        createdAt: new Date().toISOString(),
+        createdAt: entry.postedAt || entry.createdAt || new Date().toISOString(),
         seededFromArchive: true,
       });
     } catch {
@@ -1947,7 +1959,7 @@ async function seedTweetAnalyticsFromArchive(state) {
   if (!seeds.length) return state;
   return normalizeAnalyticsState({
     ...state,
-    tweets: [...state.tweets, ...seeds],
+    tweets: [...(state.tweets || []), ...seeds],
   });
 }
 
@@ -10990,11 +11002,25 @@ function buildOpsBanner({
   accountSnapshotCache = null,
   now = new Date().toISOString(),
 } = {}) {
-  const failure = growthDecision?.failureStats?.primaryReason || null;
   const spent = Number(usage?.totalEstimatedUsd) || 0;
   const cap = monthlyBudgetUsd();
   const remaining = Math.max(0, cap - spent);
-  const snapshotStale = accountSnapshotCache?.due === true || accountSnapshotCache?.fresh === false;
+  const costGuardReasons = new Set(["budget_guard", "credits_depleted", "cadence"]);
+  const nowMs = Date.parse(now);
+  const failure =
+    (Array.isArray(growthDecision?.failureStats?.topReasons)
+      ? growthDecision.failureStats.topReasons
+      : []
+    ).find((item) => {
+      if (!item?.reason) return false;
+      if (costGuardReasons.has(String(item.reason)) && !creditsDepleted && !creditsCircuit?.active) {
+        return false;
+      }
+      const at = Date.parse(item.lastAt || "");
+      if (!Number.isFinite(at) || !Number.isFinite(nowMs)) return false;
+      const ageMs = nowMs - at;
+      return ageMs >= 0 && ageMs <= 12 * 60 * 60 * 1000;
+    }) || null;
 
   if (creditsDepleted || cooldown?.reasonCode === "credits_depleted" || creditsCircuit?.active) {
     return {
@@ -11050,6 +11076,8 @@ function buildOpsBanner({
     };
   }
 
+  // Cost-guard skips are expected under the $5 cap; do not surface them as ops alarms
+  // once credits are healthy again. Only flag actionable, recent skip reasons.
   if (failure?.reason) {
     return {
       active: true,
@@ -11068,23 +11096,8 @@ function buildOpsBanner({
     };
   }
 
-  if (snapshotStale) {
-    return {
-      active: true,
-      severity: "info",
-      code: "follower_snapshot_stale",
-      title: "Active-conn snapshot is stale (still $0 to ignore)",
-      titleZh: "粉丝快照偏旧（可继续忽略，不花钱）",
-      detail: "Set TWEET_FOLLOWERS_OVERRIDE to the confirmed count when you want the dashboard number corrected without USER_ME_LOOKUP.",
-      detailZh: "若要免费校正粉丝数，设置 TWEET_FOLLOWERS_OVERRIDE=当前粉丝数，不要跑付费 USER_ME。",
-      until: null,
-      spendUsd: roundUsd(spent),
-      capUsd: cap,
-      remainingUsd: roundUsd(remaining),
-      zeroExtraXReads: true,
-      generatedAt: now,
-    };
-  }
+  // Under cached_only / zero-extra-read policy, stale follower snapshots are expected.
+  // Freshness panel already surfaces age; do not raise an ops alarm that looks like a data outage.
 
   return {
     active: false,
@@ -17220,6 +17233,8 @@ function buildGrowthReport({ state, insights, usage, budgetState, openAIUsage, g
 
 async function writeGrowthReport() {
   const state = await readTweetAnalytics();
+  // Persist archive-seeded / newest-capped analytics so dashboard + Actions cache stay aligned.
+  await persistTweetAnalytics(state);
   const insights = deriveAnalyticsInsights(state);
   const usage = await readXApiUsageState();
   const openAIUsage = await readOpenAIUsageState();

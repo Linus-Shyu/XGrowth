@@ -2,6 +2,9 @@
 
 XGrowth is a GitHub Actions–hosted growth control plane for X.
 
+> For the operator-facing overview, start with the root [README](../README.md).  
+> This document is the deeper control-loop reference for contributors.
+
 ## Control loops
 
 1. **Compose loop** (`blank.yml` / `post-tweet.mjs`)

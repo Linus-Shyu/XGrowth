@@ -1,0 +1,10 @@
+# Default owners for Open Source review.
+*       @Linus-Shyu
+
+# Cost, auth, and publishing surfaces need explicit review.
+.github/scripts/post-tweet.mjs              @Linus-Shyu
+.github/scripts/x-oauth-authorize.mjs       @Linus-Shyu
+.github/scripts/authorize-x.sh              @Linus-Shyu
+.github/workflows/                          @Linus-Shyu
+SECURITY.md                                 @Linus-Shyu
+LICENSE                                     @Linus-Shyu
