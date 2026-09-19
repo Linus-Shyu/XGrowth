@@ -10,6 +10,7 @@ for public release tags.
 
 ### Added
 
+- Weekly auto `metrics_report` schedule (Sun 23:20 UTC, ~$0.05) with account-snapshot off by default for the $5 path.
 - Open-source community pack aligned with common OpenAI public-repo conventions:
   `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, `SUPPORT.md`, PR template, issue contact links, and `CODEOWNERS`.
 
@@ -17,6 +18,7 @@ for public release tags.
 
 - Analytics retention now keeps the **newest** posts when over the 250-record cap, so archive seeds still appear in `last24h`.
 - Free `dashboard_only` sync no longer surfaces expected budget/follower-cache skips as ops outages.
+- Empty GitHub language bar: un-vendor `.github/scripts` and `.github/workflows` for Linguist.
 
 ## [0.1.0] - 2026-09-18
 

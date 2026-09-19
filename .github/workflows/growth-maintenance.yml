@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Maintenance mode. dashboard_only is free. clear_credits_circuit clears stale 402 after recharge. operator_log writes today's task completions. live_snapshot/metrics_report spend credits."
+        description: "Maintenance mode. dashboard_only is free. Weekly cron auto-runs metrics_report (~$0.05). clear_credits_circuit clears stale 402 after recharge. operator_log writes today's task completions. live_snapshot spends more credits."
         required: false
         default: dashboard_only
         type: choice
@@ -32,7 +32,10 @@ on:
         description: "For operator_log: optional notes"
         required: false
         default: ""
-  # Schedules omitted in public template. Add cron after secrets.
+  # Enable after secrets are set:
+  # schedule:
+  #   - cron: "10 */2 * * *"   # free dashboard_only
+  #   - cron: "20 23 * * 0"    # weekly metrics_report (~$0.05, Sun 23:20 UTC)
 
 permissions:
   contents: write
@@ -67,12 +70,14 @@ jobs:
       NEWS_RSS_HEALTH_ENABLED: ${{ vars.NEWS_RSS_HEALTH_ENABLED || 'true' }}
       NEWS_RSS_SKIP_AFTER_FAILURES: ${{ vars.NEWS_RSS_SKIP_AFTER_FAILURES || '3' }}
       NEWS_RSS_HEALTH_PROBE_EVERY_HOURS: ${{ vars.NEWS_RSS_HEALTH_PROBE_EVERY_HOURS || '12' }}
-      TWEET_ACCOUNT_SNAPSHOT_ENABLED: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_ENABLED || 'true' }}
-      TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '6' }}
+      # Default off under the $5 path; followers use TWEET_FOLLOWERS_OVERRIDE instead of USER_ME.
+      TWEET_ACCOUNT_SNAPSHOT_ENABLED: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_ENABLED || 'false' }}
+      TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '168' }}
       TWEET_LIVE_SNAPSHOT_METRICS_ENABLED: ${{ vars.TWEET_LIVE_SNAPSHOT_METRICS_ENABLED || 'false' }}
       TWEET_LIVE_SNAPSHOT_METRICS_MAX_POSTS: ${{ vars.TWEET_LIVE_SNAPSHOT_METRICS_MAX_POSTS || '2' }}
       TWEET_METRICS_FALLBACK_LIVE_SNAPSHOT: ${{ vars.TWEET_METRICS_FALLBACK_LIVE_SNAPSHOT || 'false' }}
-      TWEET_METRICS_MAX_POSTS: ${{ vars.TWEET_METRICS_MAX_POSTS || '5' }}
+      # Weekly metrics_report batches due posts in one TWEET_METRICS_LOOKUP (~$0.05).
+      TWEET_METRICS_MAX_POSTS: ${{ vars.TWEET_METRICS_MAX_POSTS || '15' }}
       TWEET_METRICS_MIN_AGE_MINUTES: ${{ vars.TWEET_METRICS_MIN_AGE_MINUTES || '60' }}
       TWEET_METRICS_MAX_AGE_DAYS: ${{ vars.TWEET_METRICS_MAX_AGE_DAYS || '30' }}
       TWEET_HOTSPOT_RADAR_ENABLED: ${{ vars.TWEET_HOTSPOT_RADAR_ENABLED || 'false' }}
@@ -237,11 +242,26 @@ jobs:
       - name: Dashboard data validator self-test
         run: node .github/scripts/validate-dashboard-data.mjs --self-test
 
+      - name: Resolve maintenance mode
+        id: resolve_mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            mode="${{ inputs.mode }}"
+            mode="${mode:-dashboard_only}"
+          elif [ "${{ github.event.schedule }}" = "20 23 * * 0" ]; then
+            mode="metrics_report"
+          else
+            mode="dashboard_only"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Resolved maintenance mode: $mode"
+
       - name: Refresh metrics and write growth report
         id: maintenance
         env:
-          # Default is free cache-only publish. Paid modes are manual workflow_dispatch only.
-          TWEET_MAINTENANCE_MODE: ${{ inputs.mode || 'dashboard_only' }}
+          # Bi-hourly schedule → dashboard_only ($0). Weekly Sun 23:20 UTC → metrics_report (~$0.05).
+          TWEET_MAINTENANCE_MODE: ${{ steps.resolve_mode.outputs.mode }}
           OPERATOR_COMPLETED_TASK_IDS: ${{ inputs.completed_task_ids || '' }}
           OPERATOR_REPLY_ENGAGEMENT: ${{ inputs.reply_engagement || 'unknown' }}
           OPERATOR_LOG_NOTES: ${{ inputs.notes || '' }}

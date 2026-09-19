@@ -110,10 +110,15 @@ Put the resulting refresh token into `X_OAUTH2_REFRESH_TOKEN`.
 ### 4. Enable schedules (after secrets)
 
 Public template ships **dispatch-only** workflows so forks don’t fail without keys.  
-Add cron blocks into:
+After secrets are set, uncomment the cron block in `.github/workflows/growth-maintenance.yml`:
 
-- `.github/workflows/blank.yml` — posting windows
-- `.github/workflows/growth-maintenance.yml` — dashboard + metrics
+```yaml
+schedule:
+  - cron: "10 */2 * * *"   # free dashboard_only
+  - cron: "20 23 * * 0"    # weekly metrics_report (~$0.05)
+```
+
+And enable posting windows in `.github/workflows/blank.yml`.
 
 Recommended posting windows (UTC) — language is locked to each slot:
 
@@ -163,7 +168,7 @@ Core script: [`.github/scripts/post-tweet.mjs`](.github/scripts/post-tweet.mjs)
 
 ## $5 / month success path
 
-Designed to work on a hard **$5 X API** monthly cap with **zero automatic paid reads**.
+Designed to work on a hard **$5 X API** monthly cap with **almost-zero automatic paid reads**.
 
 | Do this | Cost | Notes |
 |---|---|---|
@@ -173,7 +178,8 @@ Designed to work on a hard **$5 X API** monthly cap with **zero automatic paid r
 | Complete **3 manual route replies** from the dashboard Tasks panel | **$0** | Browser paste; no X search/read API |
 | Fix active-conn count with `TWEET_FOLLOWERS_OVERRIDE` | **$0** | Never auto-run `USER_ME` just to refresh the number |
 | Keep weekly control arm = `decision_rule` | $0 extra | Treatment formats compare against this baseline |
-| Run `live_snapshot` / `metrics_report` **manually only** | paid | Only when you consciously spend remaining credits |
+| Weekly auto `metrics_report` (Sun 23:20 UTC) | **~$0.05** | One batched tweet-metrics lookup; fills reach/likes on the board |
+| Extra `live_snapshot` / `metrics_report` | paid | Only when you consciously spend remaining credits |
 | After recharging X credits | **$0** | Actions → `growth maintenance` → `clear_credits_circuit` |
 | Log today's completed reply tasks | **$0** | Dashboard → Copy operator log → Actions → `operator_log` |
 
@@ -185,6 +191,7 @@ flowchart LR
   D --> E[3 manual reply tasks]
   E --> F[operator_log writeback]
   F --> C
+  W[Weekly metrics_report] --> C
   G[Recharge credits] --> H[clear_credits_circuit]
   H --> D
 ```
@@ -195,6 +202,8 @@ Default guardrails shipped for this budget:
 - `X_API_BUDGET_SAFETY_RATIO=0.85`
 - `DASHBOARD_EXPERIMENT_POST_SLOTS=2`
 - `TWEET_WEEKLY_CONTROL_FORMAT_ID=decision_rule`
+- `TWEET_ACCOUNT_SNAPSHOT_ENABLED=false` (followers via override)
+- `TWEET_METRICS_MAX_POSTS=15` (one weekly lookup)
 - Hotspot radar / auto-reply remain **off**
 
 If credits return `402`, the dashboard forces available remaining to `$0` and the Tasks panel still gives you a zero-read day plan.
@@ -213,7 +222,9 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `TWEET_IMAGE_ENABLED` | `false` | No image spend until ROI exists |
 | `TWEET_AUTO_REPLY_*` | off / 0 | Credits go to posts + metrics |
 | `TWEET_OSS_PROMO_*` | on / ~28% / score≥170 | Occasional repo footer without burning reads |
-| `TWEET_MAINTENANCE_MODE` | `dashboard_only` | Free dashboard publish; paid modes are manual |
+| `TWEET_MAINTENANCE_MODE` | `dashboard_only` | Free dashboard publish; weekly cron switches to `metrics_report` |
+| `TWEET_ACCOUNT_SNAPSHOT_ENABLED` | `false` | Skip USER_ME; use `TWEET_FOLLOWERS_OVERRIDE` |
+| `TWEET_METRICS_MAX_POSTS` | `15` | One weekly batched metrics lookup (~$0.05) |
 | `X_API_CREDITS_CIRCUIT_BREAKER_ENABLED` | `true` | Survive real `402` |
 
 ## Repository layout
