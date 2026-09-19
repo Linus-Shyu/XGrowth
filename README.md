@@ -24,7 +24,7 @@ It is designed for a hard **$5 / month X API** budget with **zero automatic paid
 **Author:** [Linus Shyu](https://linusshyu.dev/portfolio/)
 
 <p align="center">
-  <img alt="XGrowth dashboard preview" src="docs/images/dashboard-preview.png" width="920" />
+  <img alt="XGrowth dashboard preview" src="docs/images/dashboard-preview.jpg" width="920" />
 </p>
 
 > [!NOTE]
