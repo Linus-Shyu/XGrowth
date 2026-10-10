@@ -247,6 +247,10 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `TWEET_AUTO_THREAD_ENABLED` | `true` | Weekly: continue the best post with one reply-to-self |
 | `TWEET_PREDICTION_RECEIPTS_ENABLED` | `true` | Weekly: post a receipt only when news confirms/refutes a prediction |
 | `TWEET_PLATFORM_VARIANTS_ENABLED` | `true` | Weekly: rewrite the best post for LinkedIn / Jike / Zhihu |
+| `PANEL_DATA_FILE` | `.github/runtime/panel-data.json` | Lean v2 panel payload (~3 KB) written every maintenance run |
+| `DASHBOARD_SYNC_PATHS` | `xbot-dashboard/panel.json,docs/xbot-dashboard/panel.json` | Where the public panel data lands; the full v1 JSON stays internal |
+
+The public panel loads the lean **v2 payload** (`panel.json`, ~3 KB) instead of the full dashboard JSON: `writeGrowthReport` emits `PANEL_DATA_FILE`, the validator enforces a v2 contract with a 300 KB size guard, and `sync-dashboard-to-blog.sh` prefers `PANEL_DATA_FILE`. Update `DASHBOARD_SYNC_PATHS` accordingly if you set it as a repo variable.
 
 ## Growth levers (beyond posting)
 
