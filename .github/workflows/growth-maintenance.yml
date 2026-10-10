@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Maintenance mode. dashboard_only is free. Weekly cron auto-runs metrics_report (~$0.05). clear_credits_circuit clears stale 402 after recharge. operator_log writes today's task completions. live_snapshot spends more credits."
+        description: "Maintenance mode. dashboard_only is free. Weekly cron auto-runs metrics_report (~$0.05). clear_credits_circuit clears stale 402 after recharge. operator_log writes today's task completions. live_snapshot spends more credits. engagement runs one whitelist quote within budget."
         required: false
         default: dashboard_only
         type: choice
@@ -14,6 +14,7 @@ on:
           - operator_log
           - live_snapshot
           - metrics_report
+          - engagement
       completed_task_ids:
         description: "For operator_log: comma-separated task ids completed today"
         required: false
@@ -99,14 +100,22 @@ jobs:
       TWEET_AUTO_REPLY_RECORDS_MAX: ${{ vars.TWEET_AUTO_REPLY_RECORDS_MAX }}
       TWEET_REPLY_DRAFTS_ENABLED: ${{ vars.TWEET_REPLY_DRAFTS_ENABLED || 'true' }}
       TWEET_REPLY_DRAFT_COUNT: ${{ vars.TWEET_REPLY_DRAFT_COUNT || '5' }}
-      TWEET_REPLY_DRAFT_REUSE_HOURS: ${{ vars.TWEET_REPLY_DRAFT_REUSE_HOURS || '20' }}
+      TWEET_REPLY_DRAFT_REUSE_HOURS: ${{ vars.TWEET_REPLY_DRAFT_REUSE_HOURS || '48' }}
       TWEET_REPLY_DRAFT_THEMES: ${{ vars.TWEET_REPLY_DRAFT_THEMES }}
       TWEET_REPLY_DRAFT_TARGET_HANDLES: ${{ vars.TWEET_REPLY_DRAFT_TARGET_HANDLES }}
       TWEET_REPLY_DRAFT_SEARCH_TERMS: ${{ vars.TWEET_REPLY_DRAFT_SEARCH_TERMS }}
       TWEET_REPLY_DRAFT_SEARCH_QUERY: ${{ vars.TWEET_REPLY_DRAFT_SEARCH_QUERY }}
+      TWEET_AUTO_THREAD_ENABLED: ${{ vars.TWEET_AUTO_THREAD_ENABLED || 'true' }}
+      TWEET_AUTO_THREAD_MAX_PER_WEEK: ${{ vars.TWEET_AUTO_THREAD_MAX_PER_WEEK || '1' }}
+      TWEET_AUTO_THREAD_MIN_SCORE_MULTIPLIER: ${{ vars.TWEET_AUTO_THREAD_MIN_SCORE_MULTIPLIER || '1.5' }}
+      TWEET_PREDICTION_RECEIPTS_ENABLED: ${{ vars.TWEET_PREDICTION_RECEIPTS_ENABLED || 'true' }}
+      TWEET_PREDICTION_RECEIPT_MAX_PER_WEEK: ${{ vars.TWEET_PREDICTION_RECEIPT_MAX_PER_WEEK || '1' }}
+      TWEET_PLATFORM_VARIANTS_ENABLED: ${{ vars.TWEET_PLATFORM_VARIANTS_ENABLED || 'true' }}
+      TWEET_PLATFORM_VARIANTS_FILE: .github/runtime/platform-variants.md
+      TWEET_THREAD_CONTINUATIONS_FILE: .github/runtime/thread-continuations.json
       TWEET_FOLLOWUP_DRAFTS_ENABLED: ${{ vars.TWEET_FOLLOWUP_DRAFTS_ENABLED || 'true' }}
       TWEET_FOLLOWUP_MAX_DRAFTS: ${{ vars.TWEET_FOLLOWUP_MAX_DRAFTS }}
-      TWEET_FOLLOWUP_DRAFT_REUSE_HOURS: ${{ vars.TWEET_FOLLOWUP_DRAFT_REUSE_HOURS || '20' }}
+      TWEET_FOLLOWUP_DRAFT_REUSE_HOURS: ${{ vars.TWEET_FOLLOWUP_DRAFT_REUSE_HOURS || '48' }}
       TWEET_CADENCE_CONTROLLER_ENABLED: ${{ vars.TWEET_CADENCE_CONTROLLER_ENABLED || 'true' }}
       TWEET_CADENCE_ENFORCEMENT: ${{ vars.TWEET_CADENCE_ENFORCEMENT || 'budget_guard' }}
       TWEET_CADENCE_DAILY_POST_TARGET: ${{ vars.TWEET_CADENCE_DAILY_POST_TARGET || '1' }}
@@ -210,37 +219,9 @@ jobs:
       - name: Setup bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
-      - name: Zero-read local fallback self-test
-        env:
-          TWEET_SELF_TEST: local_fallback
-          TWEET_AI_QUALITY_GATE_ENABLED: "false"
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: X API cost governor self-test
-        env:
-          TWEET_SELF_TEST: cost_governor
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: Cached learning loop self-test
-        env:
-          TWEET_SELF_TEST: learning_loop
-          TWEET_AI_QUALITY_GATE_ENABLED: "false"
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: Cached hourly load timing self-test
-        env:
-          TWEET_SELF_TEST: hourly_load
-          TWEET_AI_QUALITY_GATE_ENABLED: "false"
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: Dashboard data validator self-test
-        run: node .github/scripts/validate-dashboard-data.mjs --self-test
+      # Self-tests moved to the weekly `self-tests` workflow to cut per-run cold-start latency.
 
       - name: Resolve maintenance mode
         id: resolve_mode
@@ -267,6 +248,20 @@ jobs:
           OPERATOR_LOG_NOTES: ${{ inputs.notes || '' }}
           X_API_CLEAR_CREDITS_REASON: manual_recharge_confirmed
         run: bun .github/scripts/post-tweet.mjs
+
+      - name: Build and optionally send newsletter digest
+        if: success() && steps.resolve_mode.outputs.mode == 'metrics_report'
+        env:
+          GROWTH_REPORT_FILE: .github/runtime/growth-report.md
+          GROWTH_REPORT_PUBLIC_FILE: ${{ vars.GROWTH_REPORT_PUBLIC_FILE || 'reports/growth-report.md' }}
+          TWEET_PLATFORM_VARIANTS_FILE: .github/runtime/platform-variants.md
+          NEWSLETTER_DIGEST_FILE: .github/runtime/newsletter-digest.md
+          NEWSLETTER_DIGEST_PUBLIC_FILE: reports/newsletter-digest.md
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NEWSLETTER_FROM: ${{ vars.NEWSLETTER_FROM }}
+          NEWSLETTER_TO: ${{ vars.NEWSLETTER_TO }}
+          NEWSLETTER_SUBJECT: ${{ vars.NEWSLETTER_SUBJECT }}
+        run: node .github/scripts/newsletter-digest.mjs
 
       - name: Purge stale runtime cache after OAuth cache failure
         if: always() && steps.maintenance.outputs.purge_runtime_cache == 'true'
@@ -346,6 +341,21 @@ jobs:
             git add "$analytics_target"
           fi
 
+          variants_source="${TWEET_PLATFORM_VARIANTS_FILE:-.github/runtime/platform-variants.md}"
+          variants_target="reports/platform-variants.md"
+          if [ -s "$variants_source" ]; then
+            mkdir -p "$(dirname "$variants_target")"
+            cp "$variants_source" "$variants_target"
+            git add "$variants_target"
+          fi
+
+          digest_source=".github/runtime/newsletter-digest.md"
+          digest_target="reports/newsletter-digest.md"
+          if [ -s "$digest_source" ]; then
+            cp "$digest_source" "$digest_target"
+            git add "$digest_target"
+          fi
+
           if git diff --staged --quiet; then
             echo "No growth report changes to commit."
             exit 0
@@ -403,6 +413,7 @@ jobs:
              [ -f .github/runtime/openai-usage.json ] || \
              [ -f .github/runtime/x-api-usage.json ] || \
              [ -f .github/runtime/growth-strategy.json ] || \
+             [ -f .github/runtime/thread-continuations.json ] || \
              [ -f .github/runtime/growth-evolution.jsonl ] || \
              [ -f .github/runtime/growth-report.md ]; then
             echo "save=true" >> "$GITHUB_OUTPUT"

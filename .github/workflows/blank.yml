@@ -101,14 +101,19 @@ jobs:
       TWEET_OSS_PROMO_LANGUAGES: ${{ vars.TWEET_OSS_PROMO_LANGUAGES || '' }}
       TWEET_STYLE_PROMPT_ZH: ${{ vars.TWEET_STYLE_PROMPT_ZH }}
       TWEET_STYLE_PROMPT_EN: ${{ vars.TWEET_STYLE_PROMPT_EN }}
-      TWEET_CANDIDATE_COUNT: ${{ vars.TWEET_CANDIDATE_COUNT || '4' }}
+      TWEET_CANDIDATE_COUNT: ${{ vars.TWEET_CANDIDATE_COUNT || '2' }}
+      TWEET_STORY_VERDICT_MODE: ${{ vars.TWEET_STORY_VERDICT_MODE || 'auto' }}
+      TWEET_STORY_PICK_MAX: ${{ vars.TWEET_STORY_PICK_MAX || '2' }}
+      TWEET_PROMPT_LEAN_CONTEXT: ${{ vars.TWEET_PROMPT_LEAN_CONTEXT || 'true' }}
+      TWEET_HISTORY_CONTEXT_MAX: ${{ vars.TWEET_HISTORY_CONTEXT_MAX || '4' }}
+      OPENAI_MAX_TOKENS: ${{ vars.OPENAI_MAX_TOKENS }}
       TWEET_CONTENT_FORMAT_ID: ${{ vars.TWEET_CONTENT_FORMAT_ID }}
       TWEET_CONTENT_FORMAT_IDS: ${{ vars.TWEET_CONTENT_FORMAT_IDS || 'prediction,decision_rule,brutal_truth,sharp_question' }}
       TWEET_FORMAT_BASE_ALLOCATION: ${{ vars.TWEET_FORMAT_BASE_ALLOCATION || 'prediction=0.65,decision_rule=0.20,brutal_truth=0.12,sharp_question=0.03' }}
       TWEET_GROWTH_EXPLORE_FORMAT_ID: ${{ vars.TWEET_GROWTH_EXPLORE_FORMAT_ID || 'brutal_truth' }}
       TWEET_BUILD_IN_PUBLIC_FILE: ${{ vars.TWEET_BUILD_IN_PUBLIC_FILE || '.github/content/build-in-public.jsonl' }}
       TWEET_BUILD_IN_PUBLIC_NOTES: ${{ vars.TWEET_BUILD_IN_PUBLIC_NOTES }}
-      TWEET_BUILD_IN_PUBLIC_RATIO: ${{ vars.TWEET_BUILD_IN_PUBLIC_RATIO || '0.35' }}
+      TWEET_BUILD_IN_PUBLIC_RATIO: ${{ vars.TWEET_BUILD_IN_PUBLIC_RATIO || '0.55' }}
       TWEET_BUILD_IN_PUBLIC_MAX_AGE_DAYS: ${{ vars.TWEET_BUILD_IN_PUBLIC_MAX_AGE_DAYS || '45' }}
       TWEET_BUILD_IN_PUBLIC_LIMIT: ${{ vars.TWEET_BUILD_IN_PUBLIC_LIMIT || '20' }}
       TWEET_DRY_RUN: ${{ vars.TWEET_DRY_RUN || 'false' }}
@@ -135,7 +140,7 @@ jobs:
       TWEET_METRICS_MAX_AGE_DAYS: ${{ vars.TWEET_METRICS_MAX_AGE_DAYS || '30' }}
       TWEET_QUALITY_GATE_ENABLED: ${{ vars.TWEET_QUALITY_GATE_ENABLED || 'true' }}
       TWEET_QUALITY_GATE_STRICT: ${{ vars.TWEET_QUALITY_GATE_STRICT || 'false' }}
-      TWEET_AI_QUALITY_GATE_ENABLED: ${{ vars.TWEET_AI_QUALITY_GATE_ENABLED || 'false' }}
+      TWEET_AI_QUALITY_GATE_ENABLED: ${{ vars.TWEET_AI_QUALITY_GATE_ENABLED || 'true' }}
       TWEET_HOTSPOT_RADAR_ENABLED: ${{ vars.TWEET_HOTSPOT_RADAR_ENABLED || 'false' }}
       TWEET_HOTSPOT_RADAR_QUERIES: ${{ vars.TWEET_HOTSPOT_RADAR_QUERIES }}
       TWEET_HOTSPOT_RADAR_MAX_QUERIES: ${{ vars.TWEET_HOTSPOT_RADAR_MAX_QUERIES }}
@@ -236,37 +241,9 @@ jobs:
       - name: Setup bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
-      - name: Zero-read local fallback self-test
-        env:
-          TWEET_SELF_TEST: local_fallback
-          TWEET_AI_QUALITY_GATE_ENABLED: "false"
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: X API cost governor self-test
-        env:
-          TWEET_SELF_TEST: cost_governor
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: Cached learning loop self-test
-        env:
-          TWEET_SELF_TEST: learning_loop
-          TWEET_AI_QUALITY_GATE_ENABLED: "false"
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: Cached hourly load timing self-test
-        env:
-          TWEET_SELF_TEST: hourly_load
-          TWEET_AI_QUALITY_GATE_ENABLED: "false"
-          TWEET_DRY_RUN: "true"
-        run: bun .github/scripts/post-tweet.mjs
-
-      - name: Dashboard data validator self-test
-        run: node .github/scripts/validate-dashboard-data.mjs --self-test
+      # Self-tests moved to the weekly `self-tests` workflow to cut per-run cold-start latency.
 
       # 3. 运行你的核心发推脚本
       - name: Generate and post tweet

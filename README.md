@@ -120,6 +120,17 @@ schedule:
 
 And enable posting windows in `.github/workflows/blank.yml`.
 
+Optional scheduled workflows (also commented out until you opt in):
+
+```yaml
+# .github/workflows/engagement.yml — whitelist quote/reply game (~$0.115/run)
+# schedule:
+#   - cron: "10 13 * * 1,3,5"   # Mon/Wed/Fri, right after the US East post
+
+# .github/workflows/heartbeat.yml — free staleness watchdog (every 6h, auto issue)
+# .github/workflows/self-tests.yml — free weekly self-test sweep
+```
+
 Recommended posting windows (UTC) — language is locked to each slot:
 
 ```text
@@ -182,6 +193,7 @@ Designed to work on a hard **$5 X API** monthly cap with **almost-zero automatic
 | Extra `live_snapshot` / `metrics_report` | paid | Only when you consciously spend remaining credits |
 | After recharging X credits | **$0** | Actions → `growth maintenance` → `clear_credits_circuit` |
 | Log today's completed reply tasks | **$0** | Dashboard → Copy operator log → Actions → `operator_log` |
+| Opt-in whitelist quote game | **~$1.4/mo** | `engagement` workflow 3×/week, one quote per run |
 
 ```mermaid
 flowchart LR
@@ -204,7 +216,7 @@ Default guardrails shipped for this budget:
 - `TWEET_WEEKLY_CONTROL_FORMAT_ID=decision_rule`
 - `TWEET_ACCOUNT_SNAPSHOT_ENABLED=false` (followers via override)
 - `TWEET_METRICS_MAX_POSTS=15` (one weekly lookup)
-- Hotspot radar / auto-reply remain **off**
+- Hotspot radar / auto-reply remain **off** in maintenance (engagement workflow is a separate opt-in)
 
 If credits return `402`, the dashboard forces available remaining to `$0` and the Tasks panel still gives you a zero-read day plan.
 
@@ -226,13 +238,38 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `TWEET_ACCOUNT_SNAPSHOT_ENABLED` | `false` | Skip USER_ME; use `TWEET_FOLLOWERS_OVERRIDE` |
 | `TWEET_METRICS_MAX_POSTS` | `15` | One weekly batched metrics lookup (~$0.05) |
 | `X_API_CREDITS_CIRCUIT_BREAKER_ENABLED` | `true` | Survive real `402` |
+| `TWEET_CANDIDATE_COUNT` | `2` | Halves generation output tokens vs 4 candidates |
+| `TWEET_STORY_VERDICT_MODE` | `auto` | AI story verdict only when images are on; local hot-score gate otherwise |
+| `TWEET_PROMPT_LEAN_CONTEXT` | `true` | Skip reactor-stack dumps in the generation prompt |
+| `TWEET_AI_QUALITY_GATE_ENABLED` | `true` | One cheap final fact-check per post; safe fallback when it rejects |
+| `TWEET_BUILD_IN_PUBLIC_RATIO` | `0.55` | First-party content beats news commentary for small accounts |
+| `TWEET_FOLLOWUP_DRAFT_REUSE_HOURS` / `TWEET_REPLY_DRAFT_REUSE_HOURS` | `48` | Fewer draft regenerations |
+| `TWEET_AUTO_THREAD_ENABLED` | `true` | Weekly: continue the best post with one reply-to-self |
+| `TWEET_PREDICTION_RECEIPTS_ENABLED` | `true` | Weekly: post a receipt only when news confirms/refutes a prediction |
+| `TWEET_PLATFORM_VARIANTS_ENABLED` | `true` | Weekly: rewrite the best post for LinkedIn / Jike / Zhihu |
+
+## Growth levers (beyond posting)
+
+The posting loop wins reach; these optional loops win distribution:
+
+| Lever | Where | Cost | Notes |
+|---|---|---|---|
+| Reply game | `engagement` workflow (Mon/Wed/Fri) | ~$0.115/run | One whitelist quote per run — cheapest impressions at small-follower scale |
+| First-party feed | `sync-github-events.mjs` | $0 | Your commits / merged PRs / releases / stars become build-in-public notes |
+| Thread continuation | weekly `metrics_report` | ~$0.03/week | Extends the best post (score ≥ baseline × 1.5), boosts dwell |
+| Prediction receipts | weekly `metrics_report` | ~$0.03/week | Posts only when news clearly confirms/refutes the prediction |
+| Platform variants | weekly `metrics_report` | ~$0.005/week | `reports/platform-variants.md` for LinkedIn / Jike / Zhihu |
+| Newsletter | `newsletter-digest.mjs` | $0 (+ Resend if configured) | `reports/newsletter-digest.md`; emails with `RESEND_API_KEY` / `NEWSLETTER_FROM` / `NEWSLETTER_TO` |
+| Follower delta | weekly `metrics_report` | $0 | `follower_delta` rows in `growth-evolution.jsonl` + report section |
+| Promo audit | growth report | $0 | “OSS promo vs organic” section — drop promo probability if it drags reach |
+| Staleness watchdog | `heartbeat` workflow (every 6h) | $0 | Opens an issue after 30h of silence; auto-closes on recovery |
 
 ## Repository layout
 
 ```text
 .github/
-  scripts/           # posting, OAuth, dashboard validators
-  workflows/         # CI self-tests + optional posting/maintenance
+  scripts/           # posting, OAuth, dashboard validators, engagement feeds, heartbeat, newsletter
+  workflows/         # CI self-tests + optional posting/maintenance/engagement/heartbeat
   config/            # RSS feed list
   content/           # build-in-public JSONL seeds
 examples/            # sanitized analytics + post samples

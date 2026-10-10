@@ -33,15 +33,24 @@ function llmThinkingEnabled() {
   return isTruthy(optionalEnv("OPENAI_THINKING_ENABLED", "false"));
 }
 
+function llmMaxTokens() {
+  const raw = optionalEnv("OPENAI_MAX_TOKENS");
+  if (!raw) return null;
+  const value = integerEnv("OPENAI_MAX_TOKENS", 0, 64, 8000);
+  return value > 0 ? value : null;
+}
+
 async function callOpenAIChat({ messages, responseFormat, temperature, purpose = "chat" }) {
   const apiKey = requireEnv("OPENAI_API_KEY");
   const model = llmModelId();
   const apiUrl = llmChatCompletionsUrl();
+  const maxTokens = llmMaxTokens();
   await evaluateOpenAIBudgetBeforeCall(purpose);
 
   const buildBody = (includeTemperature) => {
     const body = { model, messages };
     if (responseFormat) body.response_format = responseFormat;
+    if (maxTokens) body.max_tokens = maxTokens;
     if (includeTemperature && temperature != null) {
       body.temperature = temperature;
     }
@@ -159,6 +168,12 @@ async function writeTextFile(filePath, content) {
   }
   const { writeFileSync } = await import("node:fs");
   writeFileSync(filePath, content);
+}
+
+async function appendTextFile(filePath, content) {
+  await ensureParentDirectory(filePath);
+  const existing = await readTextFileIfExists(filePath);
+  await writeTextFile(filePath, `${existing}${existing && !existing.endsWith("\n") ? "\n" : ""}${content}`);
 }
 
 async function persistXRefreshToken(refreshToken) {
@@ -5015,6 +5030,36 @@ function formatCachedGenerationPolicyContext(policy) {
   ].join("\n");
 }
 
+function promptLeanContextEnabled() {
+  return isTruthy(optionalEnv("TWEET_PROMPT_LEAN_CONTEXT", "true"));
+}
+
+// Lean performance memory: keeps the high-signal summary (baseline + top
+// formats/sources/tags) but drops the multi-reactor learning-stack dumps that
+// cost hundreds of input tokens per generation call.
+function formatPerformanceContextLean(insights) {
+  if (!insights?.records?.length) {
+    return "No post performance history yet. Explore strong hooks and record outcomes.";
+  }
+  const topEntries = (buckets, limit = 3) =>
+    Object.entries(buckets || {})
+      .filter(([, bucket]) => bucket.count >= insights.minSamples)
+      .sort((left, right) => right[1].avgScore - left[1].avgScore)
+      .slice(0, limit)
+      .map(([key, bucket]) => `${key}: avg=${bucket.avgScore.toFixed(1)}, n=${bucket.count}`);
+
+  const parts = [
+    `Baseline growth score: ${insights.baselineScore.toFixed(1)} from ${insights.records.length} measured posts.`,
+  ];
+  const templates = topEntries(insights.templates);
+  const sources = topEntries(insights.sources);
+  const tags = topEntries(insights.tags, 4);
+  if (templates.length) parts.push(`Best content formats: ${templates.join("; ")}`);
+  if (sources.length) parts.push(`Best sources: ${sources.join("; ")}`);
+  if (tags.length) parts.push(`Best hashtags/topics: ${tags.join("; ")}`);
+  return parts.join("\n");
+}
+
 function formatPerformanceContext(insights, generationStack = null) {
   if (!insights?.records?.length) {
     return "No post performance history yet. Explore strong hooks and record outcomes.";
@@ -6469,7 +6514,7 @@ function followUpCandidateRecords(state, insights) {
       return baseline <= 0 || score >= baseline * numberEnv("TWEET_FOLLOWUP_MIN_SCORE_MULTIPLIER", 1.2, 0.5, 10);
     })
     .sort((left, right) => recordGrowthScore(right) - recordGrowthScore(left))
-    .slice(0, integerEnv("TWEET_FOLLOWUP_MAX_DRAFTS", 3, 1, 10));
+    .slice(0, integerEnv("TWEET_FOLLOWUP_MAX_DRAFTS", 1, 1, 10));
 }
 
 async function generateFollowUpDraftForRecord(record) {
@@ -6511,7 +6556,7 @@ async function generateFollowUpDraftForRecord(record) {
 
 async function generateFollowUpDrafts(state, insights) {
   if (!followUpDraftsEnabled()) return [];
-  const reuseHours = numberEnv("TWEET_FOLLOWUP_DRAFT_REUSE_HOURS", 20, 0, 168);
+  const reuseHours = numberEnv("TWEET_FOLLOWUP_DRAFT_REUSE_HOURS", 48, 0, 168);
   if (draftsFreshEnough(state.followUpDrafts, reuseHours)) {
     console.log(`Reusing ${state.followUpDrafts.length} follow-up draft(s); newest is within ${reuseHours}h.`);
     return state.followUpDrafts;
@@ -6573,7 +6618,7 @@ async function generateManualReplyDrafts(state, insights) {
   }
 
   const count = integerEnv("TWEET_REPLY_DRAFT_COUNT", 5, 1, 10);
-  const reuseHours = numberEnv("TWEET_REPLY_DRAFT_REUSE_HOURS", 20, 0, 168);
+  const reuseHours = numberEnv("TWEET_REPLY_DRAFT_REUSE_HOURS", 48, 0, 168);
   if (
     state.manualReplyDrafts?.length >= count &&
     draftsFreshEnough(state.manualReplyDrafts, reuseHours)
@@ -17258,8 +17303,21 @@ async function writeGrowthReport() {
     console.log(`Evolved growth strategy from daily traffic digest; mutations=${mutationSummary}.`);
   }
   const report = buildGrowthReport({ state, insights, usage, budgetState, openAIUsage, growthStrategy });
+  await appendFollowerDeltaLog(state);
+  const promoSplit = await promoPerformanceSplit(state);
+  const promoSection = promoSplit
+    ? [
+        "",
+        "## OSS promo vs organic",
+        "",
+        `- Promo posts: avg **${promoSplit.promoAvg}** (n=${promoSplit.promoSamples})`,
+        `- Organic posts: avg **${promoSplit.organicAvg}** (n=${promoSplit.organicSamples})`,
+        `- Promo lift: ${promoSplit.organicAvg > 0 ? `${(((promoSplit.promoAvg - promoSplit.organicAvg) / promoSplit.organicAvg) * 100).toFixed(0)}%` : "n/a"} (negative = promo drags reach)`,
+      ].join("\n")
+    : "";
+  const finalReport = `${appendFollowerAndPromoSections(report, state)}${promoSection}\n`;
   const file = optionalEnv("GROWTH_REPORT_FILE", ".github/runtime/growth-report.md");
-  await writeTextFile(file, report);
+  await writeTextFile(file, finalReport);
   console.log(`Wrote growth report to ${file}.`);
 
   const dailyReplyReport = buildDailyReplyReport({ state, usage, budgetState });
@@ -17275,9 +17333,9 @@ async function writeGrowthReport() {
   const summaryFile = optionalEnv("GITHUB_STEP_SUMMARY");
   if (summaryFile) {
     const existing = await readTextFileIfExists(summaryFile);
-    await writeTextFile(summaryFile, `${existing}${report}\n`);
+    await writeTextFile(summaryFile, `${existing}${finalReport}\n`);
   }
-  return report;
+  return finalReport;
 }
 
 async function recordPostedTweetAnalytics({
@@ -17406,6 +17464,7 @@ async function appendTweetArchive({
     audienceSegment: selectedStory?.audienceSegment || primaryAudienceSegment(selectedStory || tweet).id,
     audienceLabel: selectedStory?.audienceLabel || primaryAudienceSegment(selectedStory || tweet).label,
     templateId: selectedCandidate?.templateId || null,
+    promoAttached: Boolean(selectedCandidate?.openSourcePromoAttached),
     candidateScore: selectedCandidate?.score ?? null,
     candidateReason: selectedCandidate?.reason || null,
     angleMutationScore: selectedCandidate?.angleMutationScore ?? null,
@@ -17765,9 +17824,40 @@ async function evaluateStoryValue(story, language) {
   return parseStoryValueVerdict(data?.choices?.[0]?.message?.content);
 }
 
+function storyVerdictMode() {
+  const mode = optionalEnv("TWEET_STORY_VERDICT_MODE", "auto").toLowerCase();
+  return ["off", "always", "auto"].includes(mode) ? mode : "auto";
+}
+
+function imageAttachmentPlanned() {
+  if (!isTruthy(optionalEnv("TWEET_IMAGE_ENABLED", "false"))) return false;
+  const mode = optionalEnv("TWEET_DAILY_IMAGE_MODE", "ai_per_post").toLowerCase();
+  return !["text_only", "none"].includes(mode);
+}
+
+// Cost guard: the AI story verdict (1 call per uncached story) only earns its
+// keep when it feeds the image-worthiness gate or when explicitly requested.
+// With images off it is a soft postWorthy filter, so "auto" skips it and relies
+// on the local hot-score gate (evaluateStoryQuality) instead.
+function storyVerdictNeeded() {
+  const mode = storyVerdictMode();
+  if (mode === "off") return false;
+  if (mode === "always") return true;
+  return imageAttachmentPlanned();
+}
+
 async function getStoryVerdict(story, language) {
   if (!story) {
     return { postWorthy: false, imageWorthy: false, reason: "No story to evaluate." };
+  }
+
+  if (storyVerdictMode() === "off") {
+    const signal = storyImageSignal(story);
+    return {
+      postWorthy: true,
+      imageWorthy: signal.allow,
+      reason: signal.allow ? "TWEET_STORY_VERDICT_MODE=off (local image signal passed)" : signal.reason,
+    };
   }
 
   const link = story.link || "";
@@ -18652,7 +18742,7 @@ async function fetchNewsItems(performanceInsights = null, hotspotItems = []) {
   if (!urls.length && !hotspotItems.length) return { items: [], selected: null, ranked: [] };
 
   const perFeedMax = integerEnv("NEWS_PER_FEED_MAX", 8, 1, 30);
-  const contextMax = integerEnv("NEWS_MAX_ITEMS", 6, 1, 20);
+  const contextMax = integerEnv("NEWS_MAX_ITEMS", 3, 1, 20);
   const timeoutMs = integerEnv("NEWS_FETCH_TIMEOUT_MS", 10000, 1000, 30000);
   const concurrency = integerEnv("NEWS_FETCH_CONCURRENCY", 6, 1, 20);
   const pickerState = await readNewsPickerState();
@@ -18721,7 +18811,7 @@ async function fetchNewsItems(performanceInsights = null, hotspotItems = []) {
 }
 
 async function pickPostableStory(ranked, language) {
-  const maxAttempts = integerEnv("TWEET_STORY_PICK_MAX", 5, 1, 15);
+  const maxAttempts = integerEnv("TWEET_STORY_PICK_MAX", 2, 1, 15);
   const skipOnAiReject = isTruthy(optionalEnv("TWEET_AI_SKIP_LOW_VALUE", "true"));
   const archiveLinks = await readRecentArchiveStoryLinks();
 
@@ -18845,7 +18935,9 @@ function interpolatePrompt(template, values) {
 
 function formatHistoryContext(history) {
   if (!history.length) return "No recent post history.";
-  return history.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n");
+  const max = integerEnv("TWEET_HISTORY_CONTEXT_MAX", 4, 0, 50);
+  const recent = max > 0 ? history.slice(0, max) : history;
+  return recent.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n");
 }
 
 function hashtagPromptRules() {
@@ -18922,12 +19014,6 @@ function buildPrompt({
   return [
     `Write one fresh X post in ${language}.`,
     `Topic lane: ${topic}.`,
-    "Hybrid content context:",
-    newsContext,
-    "Recent post history to avoid repeating:",
-    historyContext,
-    "Performance memory to exploit:",
-    performanceContext,
     "Style:",
     style,
     "Rules:",
@@ -18942,6 +19028,13 @@ function buildPrompt({
     ...growthPromptRules(language, contentFormat),
     ...hashtagRules,
     "- Do not include URLs or links in the post.",
+    // Dynamic per-run context goes last so the static prefix above stays cacheable.
+    "Hybrid content context:",
+    newsContext,
+    "Recent post history to avoid repeating:",
+    historyContext,
+    "Performance memory to exploit:",
+    performanceContext,
   ].join("\n");
 }
 
@@ -19167,7 +19260,8 @@ async function prepareTweetImage(
 }
 
 function tweetCandidateCount() {
-  return integerEnv("TWEET_CANDIDATE_COUNT", 4, 1, 5);
+  // Cost guard: fewer candidates ≈ half the output tokens per generation call.
+  return integerEnv("TWEET_CANDIDATE_COUNT", 2, 1, 5);
 }
 
 function candidateJsonPrompt({
@@ -19196,16 +19290,12 @@ function candidateJsonPrompt({
     history: historyContext,
     performance: performanceContext,
   };
-  const baseRules = [
+  // Cost guard: static blocks come FIRST and per-run dynamic blocks LAST so
+  // DeepSeek's automatic context caching hits the long static prefix
+  // (cache-hit input tokens bill at a fraction of cache-miss tokens).
+  return [
     `Write competing X post candidates in ${language}.`,
     `Topic lane: ${topic}.`,
-    `Current time: ${now}.`,
-    "Hybrid content context:",
-    newsContext,
-    "Recent post history to avoid repeating:",
-    historyContext,
-    "Performance memory to exploit:",
-    performanceContext,
     "Style:",
     style,
     customPrompt ? `Custom prompt:\n${interpolatePrompt(customPrompt, values)}` : null,
@@ -19223,12 +19313,6 @@ function candidateJsonPrompt({
     growthFewShotExamples(language, contentType),
     ...growthPromptRules(language, contentFormats[0]),
     ...hashtagRules,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  return [
-    baseRules,
     "",
     "Generate multiple competing candidates before choosing.",
     "Available content formats:",
@@ -19237,7 +19321,17 @@ function candidateJsonPrompt({
     '{"candidates":[{"text":"final tweet text","formatId":"one format id above","angle":"short angle","reason":"why this can earn reposts/replies"}]}',
     `Return exactly ${contentFormats.length} candidates. Each candidate must use a different formatId when possible.`,
     "Each text must be publishable as-is, under 280 characters including hashtags, with no URL.",
-  ].join("\n");
+    "",
+    `Current time: ${now}.`,
+    "Hybrid content context:",
+    newsContext,
+    "Recent post history to avoid repeating:",
+    historyContext,
+    "Performance memory to exploit:",
+    performanceContext,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function parseTweetCandidateJson(content, fallbackFormats) {
@@ -20836,7 +20930,9 @@ async function composeTweet({
       ? buildSelfEvolvingGrowthStrategy({ state: { tweets: performanceInsights.records }, insights: performanceInsights, generationStack, now })
       : null);
   const performanceContext = [
-    formatPerformanceContext(performanceInsights, generationStack),
+    promptLeanContextEnabled()
+      ? formatPerformanceContextLean(performanceInsights)
+      : formatPerformanceContext(performanceInsights, generationStack),
     formatSelfEvolvingGrowthStrategyContext(growthStrategy),
   ].filter(Boolean).join("\n\n");
   const candidateCount = tweetCandidateCount();
@@ -20942,7 +21038,9 @@ async function composeTweet({
       "This is today's featured image post for the highest-value story. Take a sharper or fresher angle if needed, but stay on the selected story only.",
     );
   }
-  promptParts.push(formatCachedGenerationPolicyContext(cachedGenerationPolicy));
+  if (!promptLeanContextEnabled()) {
+    promptParts.push(formatCachedGenerationPolicyContext(cachedGenerationPolicy));
+  }
 
   const localPolicyCandidates = buildLocalPolicyTweetCandidates({
     story,
@@ -22722,6 +22820,10 @@ function operatorLogMaintenanceMode(mode = maintenanceMode()) {
   return ["operator_log", "task_log"].includes(mode);
 }
 
+function engagementMaintenanceMode(mode = maintenanceMode()) {
+  return ["engagement", "reply_game", "whitelist_engage"].includes(mode);
+}
+
 function markDashboardTelemetryCached(reason) {
   process.env.DASHBOARD_CACHED_TELEMETRY_REASON = reason;
 }
@@ -22890,6 +22992,499 @@ async function runLiveSnapshotMaintenance() {
   console.log("Live snapshot maintenance complete.");
 }
 
+// ---------------------------------------------------------------------------
+// Weekly growth actions: auto-thread, prediction receipts, platform variants.
+// These run inside metrics_report (weekly) so their X/LLM spend is bounded.
+// ---------------------------------------------------------------------------
+
+function threadContinuationsFile() {
+  return optionalEnv("TWEET_THREAD_CONTINUATIONS_FILE", ".github/runtime/thread-continuations.json");
+}
+
+async function readThreadContinuations() {
+  return readJsonFileIfExists(threadContinuationsFile(), { continuations: [] });
+}
+
+async function persistThreadContinuations(state) {
+  const file = threadContinuationsFile();
+  await writeTextFile(file, `${JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2)}\n`);
+}
+
+async function recordThreadContinuation({ kind, originalId, text, postedId, url, reason }) {
+  const state = await readThreadContinuations();
+  const continuations = Array.isArray(state.continuations) ? state.continuations : [];
+  continuations.push({
+    kind,
+    originalId: String(originalId || ""),
+    text: String(text || "").slice(0, 560),
+    postedId: postedId ? String(postedId) : null,
+    url: url || (postedId ? `https://x.com/i/web/status/${postedId}` : null),
+    reason: String(reason || "").slice(0, 240),
+    createdAt: new Date().toISOString(),
+  });
+  await persistThreadContinuations({ continuations: continuations.slice(-200) });
+}
+
+async function appendReplyToArchive({ tweetId, text, replyToId, kind }) {
+  if (!isTruthy(optionalEnv("TWEET_ARCHIVE_ENABLED", "true"))) return;
+  const file = optionalEnv("TWEET_ARCHIVE_FILE", "archive/tweets.jsonl");
+  const entry = {
+    id: tweetId ? String(tweetId) : null,
+    text,
+    language: null,
+    postedAt: new Date().toISOString(),
+    url: tweetId ? `https://x.com/i/web/status/${tweetId}` : null,
+    replyToId: replyToId ? String(replyToId) : null,
+    kind: kind || "auto_reply",
+  };
+  await appendTextFile(file, `${JSON.stringify(entry)}\n`);
+}
+
+function autoThreadEnabled() {
+  return isTruthy(optionalEnv("TWEET_AUTO_THREAD_ENABLED", "true"));
+}
+
+function autoThreadCandidates(state, insights) {
+  if (!autoThreadEnabled()) return [];
+  const minAgeHours = numberEnv("TWEET_AUTO_THREAD_MIN_AGE_HOURS", 6, 1, 168);
+  const maxAgeHours = numberEnv("TWEET_AUTO_THREAD_MAX_AGE_HOURS", 96, 12, 720);
+  const minScoreMultiplier = numberEnv("TWEET_AUTO_THREAD_MIN_SCORE_MULTIPLIER", 1.5, 0.5, 10);
+  const baseline = insights.baselineScore || 0;
+  return (state.tweets || [])
+    .filter((record) => {
+      const postedAt = Date.parse(record.postedAt || "");
+      if (!Number.isFinite(postedAt) || !record.id) return false;
+      const ageHours = (Date.now() - postedAt) / (60 * 60 * 1000);
+      if (ageHours < minAgeHours || ageHours > maxAgeHours) return false;
+      const score = recordGrowthScore(record);
+      if (!score) return false;
+      return baseline <= 0 || score >= baseline * minScoreMultiplier;
+    })
+    .sort((left, right) => recordGrowthScore(right) - recordGrowthScore(left))
+    .slice(0, integerEnv("TWEET_AUTO_THREAD_MAX_PER_WEEK", 1, 1, 5));
+}
+
+async function runAutoThreadContinuation(state, insights, accessToken) {
+  if (!autoThreadEnabled()) return;
+  const budget = await evaluatePostBudget(false);
+  if (!budget.allowed) {
+    console.log(`Auto-thread skipped to protect X API budget: ${budget.reason}`);
+    return;
+  }
+  const continuations = await readThreadContinuations();
+  const handled = new Set(
+    (continuations.continuations || []).map((item) => String(item.originalId)),
+  );
+  const candidates = autoThreadCandidates(state, insights).filter(
+    (record) => !handled.has(String(record.id)),
+  );
+  if (!candidates.length) {
+    console.log("Auto-thread: no eligible high-performing tweets this week.");
+    return;
+  }
+
+  const record = candidates[0];
+  const languageCode = record.language || (/\p{Script=Han}/u.test(record.text || "") ? "zh" : "en");
+  const { response, data } = await callOpenAIChat({
+    purpose: "auto_thread",
+    messages: [
+      {
+        role: "system",
+        content:
+          "You extend a high-performing X post with ONE sharp follow-up. Return JSON only: {\"text\":\"continuation\"}. Add a second insight, example, or sharper prediction. Standalone and human; no URLs, no hashtags, no emoji, no engagement bait, no self-reference to metrics.",
+      },
+      {
+        role: "user",
+        content: [
+          `Language: ${languageCode === "zh" ? "Chinese" : "English"}`,
+          "Original post:",
+          record.text,
+          "Write one follow-up that continues the thread (max 280 chars).",
+        ].join("\n"),
+      },
+    ],
+    responseFormat: { type: "json_object" },
+  });
+
+  if (!response.ok) {
+    console.warn(`Auto-thread generation failed (${response.status}); skipping.`);
+    return;
+  }
+  let text = "";
+  try {
+    text = cleanReplyText(JSON.parse(data?.choices?.[0]?.message?.content || "{}").text);
+  } catch {
+    console.warn("Auto-thread returned unparsable JSON; skipping.");
+    return;
+  }
+  if (!text || replyQualityIssue(text) || countCharacters(text) > MAX_TWEET_LENGTH) {
+    console.warn("Auto-thread text failed local quality checks; skipping.");
+    return;
+  }
+
+  try {
+    const created = await postReply(text, String(record.id), accessToken);
+    const tweetId = created?.data?.id;
+    await recordThreadContinuation({
+      kind: "auto_thread",
+      originalId: record.id,
+      text,
+      postedId: tweetId,
+      reason: `score=${recordGrowthScore(record).toFixed(1)}`,
+    });
+    await appendReplyToArchive({ tweetId, text, replyToId: record.id, kind: "auto_thread" });
+    console.log(`Auto-thread posted: ${tweetId || "unknown id"} under ${record.id}`);
+  } catch (error) {
+    console.warn(`Auto-thread posting failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function predictionReceiptsEnabled() {
+  return isTruthy(optionalEnv("TWEET_PREDICTION_RECEIPTS_ENABLED", "true"));
+}
+
+function predictionReceiptCandidates(state) {
+  if (!predictionReceiptsEnabled()) return [];
+  const minAgeDays = numberEnv("TWEET_PREDICTION_RECEIPT_MIN_AGE_DAYS", 3, 1, 30);
+  const maxAgeDays = numberEnv("TWEET_PREDICTION_RECEIPT_MAX_AGE_DAYS", 21, 7, 90);
+  return (state.tweets || [])
+    .filter((record) => {
+      if (String(record.templateId || "") !== "prediction") return false;
+      const postedAt = Date.parse(record.postedAt || "");
+      if (!Number.isFinite(postedAt)) return false;
+      const ageDays = (Date.now() - postedAt) / (24 * 60 * 60 * 1000);
+      if (ageDays < minAgeDays || ageDays > maxAgeDays) return false;
+      return recordGrowthScore(record) > 0;
+    })
+    .sort((left, right) => recordGrowthScore(right) - recordGrowthScore(left))
+    .slice(0, integerEnv("TWEET_PREDICTION_RECEIPT_MAX_PER_WEEK", 1, 1, 5));
+}
+
+async function runPredictionReceipts(state, accessToken) {
+  if (!predictionReceiptsEnabled()) return;
+  const budget = await evaluatePostBudget(false);
+  if (!budget.allowed) {
+    console.log(`Prediction receipts skipped to protect X API budget: ${budget.reason}`);
+    return;
+  }
+  const continuations = await readThreadContinuations();
+  const handled = new Set(
+    (continuations.continuations || [])
+      .filter((item) => item.kind === "prediction_receipt")
+      .map((item) => String(item.originalId)),
+  );
+  const candidates = predictionReceiptCandidates(state).filter(
+    (record) => !handled.has(String(record.id)),
+  );
+  if (!candidates.length) {
+    console.log("Prediction receipts: no due predictions this week.");
+    return;
+  }
+
+  const record = candidates[0];
+  const { items: newsItems } = await fetchNewsItems(null, []);
+  const newsContext = newsItems
+    .slice(0, 3)
+    .map((item, index) => `${index + 1}. ${item.title} (${item.source}): ${String(item.summary || "").slice(0, 200)}`)
+    .join("\n") || "No fresh news context available.";
+
+  const { response, data } = await callOpenAIChat({
+    purpose: "prediction_receipt",
+    messages: [
+      {
+        role: "system",
+        content:
+          'You fact-check a past X prediction against fresh news. Return JSON only: {"verdict":"confirmed|refuted|inconclusive","text":"receipt post"}. If the news does not clearly confirm or refute the prediction, verdict MUST be "inconclusive" and text empty. Receipt: under 280 chars, no URLs, no hashtags, humble-but-sharp tone, cite what actually happened.',
+      },
+      {
+        role: "user",
+        content: [
+          "Original prediction:",
+          record.text,
+          `Prediction posted: ${record.postedAt || "unknown"}`,
+          "",
+          "Fresh news context (ground truth only):",
+          newsContext,
+        ].join("\n"),
+      },
+    ],
+    responseFormat: { type: "json_object" },
+  });
+
+  if (!response.ok) {
+    console.warn(`Prediction receipt generation failed (${response.status}); skipping.`);
+    return;
+  }
+  let verdict = "inconclusive";
+  let text = "";
+  try {
+    const parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+    verdict = String(parsed.verdict || "inconclusive").toLowerCase();
+    text = cleanReplyText(parsed.text || "");
+  } catch {
+    console.warn("Prediction receipt returned unparsable JSON; skipping.");
+    return;
+  }
+  if (!["confirmed", "refuted"].includes(verdict) || !text || countCharacters(text) > MAX_TWEET_LENGTH) {
+    console.log(`Prediction receipt verdict=${verdict}; skipping post.`);
+    await recordThreadContinuation({
+      kind: "prediction_receipt",
+      originalId: record.id,
+      text: "",
+      postedId: null,
+      reason: `verdict=${verdict}`,
+    });
+    return;
+  }
+
+  try {
+    const created = await postReply(text, String(record.id), accessToken);
+    const tweetId = created?.data?.id;
+    await recordThreadContinuation({
+      kind: "prediction_receipt",
+      originalId: record.id,
+      text,
+      postedId: tweetId,
+      reason: `verdict=${verdict}`,
+    });
+    await appendReplyToArchive({ tweetId, text, replyToId: record.id, kind: "prediction_receipt" });
+    console.log(`Prediction receipt posted (${verdict}): ${tweetId || "unknown id"} under ${record.id}`);
+  } catch (error) {
+    console.warn(`Prediction receipt posting failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function platformVariantsEnabled() {
+  return isTruthy(optionalEnv("TWEET_PLATFORM_VARIANTS_ENABLED", "true"));
+}
+
+function platformVariantsFile() {
+  return optionalEnv("TWEET_PLATFORM_VARIANTS_FILE", ".github/runtime/platform-variants.md");
+}
+
+async function runPlatformVariants(state) {
+  if (!platformVariantsEnabled()) return;
+  const measured = (state.tweets || [])
+    .filter((record) => latestTweetSnapshot(record))
+    .sort((left, right) => recordGrowthScore(right) - recordGrowthScore(left));
+  const best = measured[0];
+  if (!best) {
+    console.log("Platform variants: no measured tweet this week; skipping.");
+    return;
+  }
+
+  const { response, data } = await callOpenAIChat({
+    purpose: "platform_variants",
+    messages: [
+      {
+        role: "system",
+        content:
+          'You repackage one high-performing X post for other platforms. Return JSON only: {"linkedin":"long-form post","jike":"Chinese short post","zhihu":"Chinese answer-style post"}. Keep the core insight intact, adapt voice per platform, no invented facts, no links.',
+      },
+      {
+        role: "user",
+        content: [
+          "Source X post (performed best this week):",
+          best.text,
+          `Original language: ${best.language || "en"}`,
+          "LinkedIn: 6-12 lines, concrete numbers and takeaways. 即刻: punchy Chinese, 2-4 lines. 知乎: answer-style, 3-6 lines.",
+        ].join("\n"),
+      },
+    ],
+    responseFormat: { type: "json_object" },
+  });
+
+  if (!response.ok) {
+    console.warn(`Platform variants generation failed (${response.status}); skipping.`);
+    return;
+  }
+  let variants = {};
+  try {
+    variants = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+  } catch {
+    console.warn("Platform variants returned unparsable JSON; skipping.");
+    return;
+  }
+  const lines = [
+    `# Platform variants — week of ${new Date().toISOString().slice(0, 10)}`,
+    "",
+    `Source tweet (${best.url || best.id || "unknown"}):`,
+    "",
+    `> ${String(best.text || "").replace(/\n/g, "\n> ")}`,
+    "",
+    "## LinkedIn",
+    "",
+    String(variants.linkedin || "—").trim(),
+    "",
+    "## 即刻",
+    "",
+    String(variants.jike || "—").trim(),
+    "",
+    "## 知乎",
+    "",
+    String(variants.zhihu || "—").trim(),
+    "",
+  ].join("\n");
+  const file = platformVariantsFile();
+  await writeTextFile(file, `${lines}\n`);
+  console.log(`Wrote platform variants for best tweet ${best.id || "unknown"} to ${file}.`);
+}
+
+function followerDeltaRows(state) {
+  const snapshots = (state.accountSnapshots || [])
+    .filter((snapshot) => snapshot?.checkedAt && snapshot?.publicMetrics)
+    .sort((left, right) => Date.parse(left.checkedAt || "") - Date.parse(right.checkedAt || ""));
+  if (snapshots.length < 2) return null;
+  const previous = snapshots[snapshots.length - 2];
+  const latest = snapshots[snapshots.length - 1];
+  const previousFollowers = Number(previous.publicMetrics.followers_count) || 0;
+  const latestFollowers = Number(latest.publicMetrics.followers_count) || 0;
+  const daysBetween =
+    (Date.parse(latest.checkedAt) - Date.parse(previous.checkedAt)) / (24 * 60 * 60 * 1000);
+  return {
+    previousFollowers,
+    latestFollowers,
+    delta: latestFollowers - previousFollowers,
+    daysBetween: Math.max(0, Number(daysBetween.toFixed(2))),
+    checkedAt: latest.checkedAt,
+  };
+}
+
+async function appendFollowerDeltaLog(state) {
+  const delta = followerDeltaRows(state);
+  if (!delta) return;
+  const file = growthEvolutionFile();
+  const existing = await readTextFileIfExists(file);
+  const lastLine = existing ? existing.split("\n").filter(Boolean).slice(-1)[0] : "";
+  let lastRow = null;
+  try {
+    lastRow = lastLine ? JSON.parse(lastLine) : null;
+  } catch {
+    lastRow = null;
+  }
+  if (lastRow?.type === "follower_delta" && lastRow?.checkedAt === delta.checkedAt) return;
+  const row = {
+    type: "follower_delta",
+    generatedAt: new Date().toISOString(),
+    utcDay: new Date().toISOString().slice(0, 10),
+    followers: delta.latestFollowers,
+    delta,
+    daysBetween: delta.daysBetween,
+    checkedAt: delta.checkedAt,
+  };
+  await appendTextFile(file, `${JSON.stringify(row)}\n`);
+  console.log(
+    `Logged follower delta: ${delta.delta >= 0 ? "+" : ""}${delta.delta} (${delta.previousFollowers} -> ${delta.latestFollowers}) over ${delta.daysBetween}d.`,
+  );
+}
+
+async function promoPerformanceSplit(state) {
+  const archiveFile = optionalEnv("TWEET_ARCHIVE_FILE", "archive/tweets.jsonl");
+  const content = await readTextFileIfExists(archiveFile);
+  if (!content.trim()) return null;
+  const promoById = new Map();
+  for (const line of content.trim().split("\n")) {
+    try {
+      const entry = JSON.parse(line);
+      if (entry.id) promoById.set(String(entry.id), Boolean(entry.promoAttached));
+    } catch {
+      continue;
+    }
+  }
+  const measured = (state.tweets || []).filter((record) => record?.id && latestTweetSnapshot(record));
+  const promo = [];
+  const organic = [];
+  for (const record of measured) {
+    if (promoById.get(String(record.id))) promo.push(record);
+    else organic.push(record);
+  }
+  if (promo.length < 3) return null;
+  return {
+    promoAvg: Number(averageRecordScore(promo).toFixed(1)),
+    organicAvg: Number(averageRecordScore(organic).toFixed(1)),
+    promoSamples: promo.length,
+    organicSamples: organic.length,
+  };
+}
+
+function appendFollowerAndPromoSections(report, state) {
+  const lines = [String(report || "").trimEnd()];
+  const delta = followerDeltaRows(state);
+  if (delta) {
+    lines.push(
+      "",
+      "## Follower delta",
+      "",
+      `- Latest snapshot: **${delta.latestFollowers}** followers (${delta.checkedAt}).`,
+      `- Change vs previous snapshot: **${delta.delta >= 0 ? "+" : ""}${delta.delta}** over ${delta.daysBetween}d.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+
+async function runEngagementMaintenance() {
+  console.log(
+    "Running engagement maintenance: one cheap whitelist quote/reply inside the X API budget. No DeepSeek-heavy work.",
+  );
+
+  const usage = await readXApiUsageState();
+  const cooldown = evaluateXApiCooldown(usage);
+  if (cooldown.active) {
+    console.warn(`Skipping engagement run: ${cooldown.reason}`);
+    await recordRunEvent("skip", `engagement skip: ${cooldown.reason}`, {
+      category: "cooldown",
+      reasonCode: cooldown.reasonCode,
+    });
+    return;
+  }
+
+  const creditsCircuit = evaluateXCreditsCircuit(usage);
+  if (creditsCircuit.active && !dryRunEnabled()) {
+    console.warn(`Skipping engagement run by X credits circuit breaker: ${creditsCircuit.reason}`);
+    await recordRunEvent("skip", `engagement skip: credits depleted (${creditsCircuit.reason})`, {
+      category: "credits_depleted",
+    });
+    return;
+  }
+
+  const projectedCost =
+    estimatedEndpointCost("USER_ME_LOOKUP") +
+    integerEnv("TWEET_AUTO_REPLY_MAX_QUERIES", 1, 1, 5) * estimatedEndpointCost("AUTO_REPLY_SEARCH") +
+    integerEnv("TWEET_AUTO_REPLY_MAX_PER_RUN", 1, 0, 10) * estimatedEndpointCost("CREATE_QUOTE");
+  const spent = Number(usage.totalEstimatedUsd) || 0;
+  const safeCap = monthlyBudgetUsd() * budgetSafetyRatio();
+  if (spent + projectedCost > safeCap) {
+    console.warn(
+      `Skipping engagement run to protect X API budget: $${spent.toFixed(3)} spent + ~$${projectedCost.toFixed(3)} next engagement > $${safeCap.toFixed(2)} safe cap.`,
+    );
+    await recordRunEvent("skip", "engagement skip: x_api_budget_guard", {
+      category: "budget",
+      projectedCost,
+      spent,
+      safeCap,
+    });
+    return;
+  }
+  console.log(
+    `Engagement budget check passed: ~$${projectedCost.toFixed(3)} projected, $${spent.toFixed(3)} spent / $${safeCap.toFixed(2)} safe cap.`,
+  );
+
+  if (dryRunEnabled()) {
+    console.log("Engagement dry run complete; skipped X reads and posts.");
+    return;
+  }
+
+  const accessToken = await getXAccessTokenWithFallback();
+  await runAutoReplies(accessToken);
+  await recordRunEvent("engagement", "engagement maintenance complete", {
+    category: "publish",
+    projectedCost,
+  });
+  console.log("Engagement maintenance complete.");
+}
+
 async function runGrowthMaintenance() {
   const mode = maintenanceMode();
   if (clearCreditsCircuitMaintenanceMode(mode)) {
@@ -22898,6 +23493,10 @@ async function runGrowthMaintenance() {
   }
   if (operatorLogMaintenanceMode(mode)) {
     await runOperatorLogMaintenance();
+    return;
+  }
+  if (engagementMaintenanceMode(mode)) {
+    await runEngagementMaintenance();
     return;
   }
   if (isTruthy(optionalEnv("X_API_CLEAR_CREDITS_CIRCUIT", "false"))) {
@@ -22920,7 +23519,7 @@ async function runGrowthMaintenance() {
     return;
   }
 
-  console.log("Running growth maintenance mode: metrics, hotspot radar, auto-replies, reply drafts, follow-up drafts, report.");
+  console.log("Running growth maintenance mode: metrics, hotspot radar, auto-replies, reply drafts, follow-up drafts, auto-thread, prediction receipts, platform variants, report.");
   if (dryRunEnabled()) {
     markDashboardTelemetryCached("dry_run");
     await writeGrowthReport();
@@ -22991,7 +23590,14 @@ async function runGrowthMaintenance() {
   insights = deriveAnalyticsInsights(state);
   await generateFollowUpDrafts(state, insights);
   await generateManualReplyDrafts(state, insights);
+  if (accessToken) {
+    await runAutoThreadContinuation(state, insights, accessToken);
+    await runPredictionReceipts(state, accessToken);
+  } else {
+    console.log("Skipping auto-thread and prediction receipts: no X access token.");
+  }
   await writeGrowthReport();
+  await runPlatformVariants(state);
   console.log("Growth maintenance complete.");
 }
 
@@ -23133,7 +23739,7 @@ async function main() {
     imagePlan = await resolveImageAttachmentPlan({ mediaRoiGate });
   } else {
     const languageForRun = plannedLanguage;
-    const { items: newsItems, ranked } = await fetchNewsItems(
+    const { items: newsItems, ranked, selected: newsSelected } = await fetchNewsItems(
       performanceInsights,
       cachedHotspotItems(analyticsState),
     );
@@ -23150,22 +23756,38 @@ async function main() {
       return;
     }
 
-    let selected = ranked[0] || null;
+    // newsSelected already applies the archive cooldown filter, so the
+    // no-verdict path keeps the same anti-repeat protection as before.
+    let selected = newsSelected || ranked[0] || null;
     let verdict = null;
-    if (ranked.length) {
+    const hybridSeed = `${new Date().toISOString().slice(0, 13)}:${languageForRun?.code || "en"}`;
+    const buildRatio = numberEnv("TWEET_BUILD_IN_PUBLIC_RATIO", 0.35, 0, 0.9);
+    let hybridStory = chooseHybridContent({
+      selectedNews: selected,
+      buildNotes,
+      buildRatio,
+      seed: hybridSeed,
+    });
+
+    // Cost guard: decide the content kind BEFORE spending AI verdict calls.
+    // Build-in-public runs (~TWEET_BUILD_IN_PUBLIC_RATIO of the time) never
+    // need a news verdict, and with images off the verdict is a soft filter,
+    // so "auto" mode skips it entirely.
+    const pickNeeded =
+      hybridStory?.contentKind === "news_take" && ranked.length > 0 && storyVerdictNeeded();
+    if (pickNeeded) {
       const pick = await pickPostableStory(ranked, languageForRun);
       if (pick) {
         selected = pick.story;
         verdict = pick.verdict;
+        hybridStory = chooseHybridContent({
+          selectedNews: selected,
+          buildNotes,
+          buildRatio,
+          seed: hybridSeed,
+        });
       }
     }
-
-    const hybridStory = chooseHybridContent({
-      selectedNews: selected,
-      buildNotes,
-      buildRatio: numberEnv("TWEET_BUILD_IN_PUBLIC_RATIO", 0.35, 0, 0.9),
-      seed: `${new Date().toISOString().slice(0, 13)}:${languageForRun?.code || "en"}`,
-    });
     if (!hybridStory) {
       console.log("Skipping run; no post-worthy hybrid content found.");
       await recordRunEvent("skip", "no post-worthy hybrid content found", {

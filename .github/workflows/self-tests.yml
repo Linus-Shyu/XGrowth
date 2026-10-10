@@ -1,0 +1,77 @@
+name: self-tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Sunday 23:45 UTC — moved out of every posting run to cut cold-start latency.
+    - cron: "45 23 * * 0"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: x-bot-self-tests
+  cancel-in-progress: true
+
+jobs:
+  self-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Restore learning cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .github/runtime
+          key: x-bot-self-tests-${{ github.run_id }}
+          restore-keys: |
+            x-bot-learning-
+            x-bot-runtime-
+
+      - name: Ensure runtime directory exists
+        run: mkdir -p .github/runtime
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.2
+
+      - name: Zero-read local fallback self-test
+        env:
+          TWEET_SELF_TEST: local_fallback
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: X API cost governor self-test
+        env:
+          TWEET_SELF_TEST: cost_governor
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Cached learning loop self-test
+        env:
+          TWEET_SELF_TEST: learning_loop
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Cached hourly load timing self-test
+        env:
+          TWEET_SELF_TEST: hourly_load
+          TWEET_AI_QUALITY_GATE_ENABLED: "false"
+          TWEET_DRY_RUN: "true"
+        run: bun .github/scripts/post-tweet.mjs
+
+      - name: Dashboard data validator self-test
+        run: node .github/scripts/validate-dashboard-data.mjs --self-test
+
+      - name: Save self-test runtime state
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: .github/runtime
+          key: x-bot-self-tests-${{ github.run_id }}
