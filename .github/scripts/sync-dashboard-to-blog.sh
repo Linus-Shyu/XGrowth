@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA_FILE="${DASHBOARD_DATA_FILE:-.github/runtime/dashboard-data.json}"
+# Prefer the lean v2 panel payload; fall back to the full v1 dashboard JSON.
+DATA_FILE="${PANEL_DATA_FILE:-${DASHBOARD_DATA_FILE:-.github/runtime/dashboard-data.json}}"
 SYNC_REPO="${DASHBOARD_SYNC_REPO:-Linus-Shyu/Linus-Shyu.github.io}"
 SYNC_TOKEN_SOURCE=""
 if [[ -n "${DASHBOARD_SYNC_GITHUB_TOKEN:-}" ]]; then

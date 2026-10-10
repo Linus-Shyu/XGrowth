@@ -17330,6 +17330,20 @@ async function writeGrowthReport() {
   await writeTextFile(dashboardDataFile, `${JSON.stringify(dashboardData, null, 2)}\n`);
   console.log(`Wrote dashboard data to ${dashboardDataFile}.`);
 
+  const panelLastPost = await lastArchivePost();
+  const panelData = buildLeanPanelData({
+    dashboardData,
+    state,
+    insights,
+    usage,
+    openAIUsage,
+    lastPost: panelLastPost,
+    promoSplit,
+  });
+  const panelDataFile = optionalEnv("PANEL_DATA_FILE", ".github/runtime/panel-data.json");
+  await writeTextFile(panelDataFile, `${JSON.stringify(panelData)}\n`);
+  console.log(`Wrote lean panel data to ${panelDataFile}.`);
+
   const summaryFile = optionalEnv("GITHUB_STEP_SUMMARY");
   if (summaryFile) {
     const existing = await readTextFileIfExists(summaryFile);
@@ -23420,6 +23434,172 @@ function appendFollowerAndPromoSections(report, state) {
     );
   }
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Lean panel data (v2): a small, auto-synced snapshot for the public dashboard.
+// The full v1 dashboard JSON stays internal; this contract is what the blog
+// panel loads, so the synced payload stays tiny and the panel stays fast.
+// ---------------------------------------------------------------------------
+
+async function lastArchivePost() {
+  const file = optionalEnv("TWEET_ARCHIVE_FILE", "archive/tweets.jsonl");
+  const content = await readTextFileIfExists(file);
+  const lines = content.trim().split("\n").filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try {
+      const entry = JSON.parse(lines[index]);
+      if (entry?.postedAt) return entry;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function leanPanelTopBuckets(buckets, limit, minSamples = 1) {
+  return Object.entries(buckets || {})
+    .filter(([, bucket]) => (Number(bucket?.count) || 0) >= minSamples)
+    .sort((left, right) => (Number(right[1]?.avgScore) || 0) - (Number(left[1]?.avgScore) || 0))
+    .slice(0, limit)
+    .map(([id, bucket]) => ({
+      id,
+      avgScore: Number((Number(bucket?.avgScore) || 0).toFixed(1)),
+      count: Number(bucket?.count) || 0,
+    }));
+}
+
+function buildLeanPanelData({
+  dashboardData,
+  state,
+  insights,
+  usage,
+  openAIUsage,
+  lastPost,
+  promoSplit,
+}) {
+  const now = new Date().toISOString();
+  const profile = dashboardData?.profile || {};
+  const telemetry = dashboardData?.telemetry || {};
+
+  const tasks = (Array.isArray(dashboardData?.operatorTasks) ? dashboardData.operatorTasks : [])
+    .filter((task) => task?.id !== "ops-banner-check" || Boolean(task.openUrl))
+    .slice(0, 5)
+    .map((task) => ({
+      id: task.id || null,
+      title: task.titleZh || task.title || "",
+      detail: task.detailZh || task.detail || "",
+      url: task.openUrl || null,
+      text: task.copyText || null,
+    }));
+
+  const measured = (state.tweets || []).filter((record) => latestTweetSnapshot(record));
+  const bestPost = [...measured].sort((left, right) => recordGrowthScore(right) - recordGrowthScore(left))[0] || null;
+
+  const days = [];
+  for (let index = 13; index >= 0; index -= 1) {
+    const date = new Date(Date.now() - index * 86_400_000);
+    days.push({
+      key: date.toISOString().slice(0, 10),
+      label: `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`,
+    });
+  }
+  const postsDaily = days.map((day) => ({
+    day: day.label,
+    posts: (state.tweets || []).filter((record) => String(record.postedAt || "").startsWith(day.key)).length,
+  }));
+  const usageDays = usage?.days || {};
+  const llmDays = openAIUsage?.days || {};
+  const spendDaily = days.map((day) => ({
+    day: day.label,
+    xApiUsd: Number(usageDays[day.key]?.estimatedUsd || 0),
+    llmUsd: Number(llmDays[day.key]?.estimatedUsd || 0),
+  }));
+
+  const xBudget = monthlyBudgetUsd();
+  const llmBudget = numberEnv("OPENAI_MONTHLY_BUDGET_USD", 0, 0, 1000);
+  const llmTotals = Object.values(openAIUsage?.purposes || {}).reduce(
+    (acc, bucket) => {
+      acc.calls += Number(bucket?.calls) || 0;
+      acc.inputTokens += Number(bucket?.inputTokens) || 0;
+      acc.outputTokens += Number(bucket?.outputTokens) || 0;
+      return acc;
+    },
+    { calls: 0, inputTokens: 0, outputTokens: 0 },
+  );
+
+  const creditsCircuit = evaluateXCreditsCircuit(usage || {});
+  const followerDelta = followerDeltaRows(state);
+  const feeds = state.rssHealth?.feeds || {};
+  const feedEntries = Object.values(feeds);
+  const rssOk = feedEntries.filter((feed) => !feed?.consecutiveFailures).length;
+  const runEvents = state.runEvents || [];
+  const lastEvent = runEvents[runEvents.length - 1] || null;
+
+  return {
+    version: 2,
+    updatedAt: now,
+    telemetry: {
+      source: telemetry.cachedOnlyRefresh ? "cached" : "live",
+      reason: telemetry.cachedReason || null,
+      dataAgeMinutes: telemetry.ageMinutes ?? null,
+      metricsCheckedAt: telemetry.tweetMetricsCheckedAt || null,
+      followersCheckedAt: telemetry.accountCheckedAt || null,
+    },
+    account: {
+      followers: profile.followers ?? null,
+      delta: followerDelta?.delta ?? null,
+      deltaDays: followerDelta?.daysBetween ?? null,
+      baselineScore: profile.baselineScore ?? 0,
+      measuredPosts: profile.measuredPosts ?? 0,
+      trackedPosts: profile.trackedPosts ?? 0,
+    },
+    posting: lastPost
+      ? {
+          at: lastPost.postedAt,
+          url: lastPost.url || (lastPost.id ? `https://x.com/i/web/status/${lastPost.id}` : null),
+          text: String(lastPost.text || "").slice(0, 280),
+          hoursAgo: Number(((Date.now() - Date.parse(lastPost.postedAt)) / 3_600_000).toFixed(1)),
+        }
+      : null,
+    content: {
+      topFormats: leanPanelTopBuckets(insights.templates, 4),
+      topTags: leanPanelTopBuckets(insights.tags, 5, insights.minSamples),
+      bestPost: bestPost
+        ? {
+            text: String(bestPost.text || "").slice(0, 280),
+            url: bestPost.url || (bestPost.id ? `https://x.com/i/web/status/${bestPost.id}` : null),
+            score: Number(recordGrowthScore(bestPost).toFixed(1)),
+            templateId: bestPost.templateId || null,
+          }
+        : null,
+    },
+    budget: {
+      xApi: {
+        spentUsd: Number((Number(usage?.totalEstimatedUsd) || 0).toFixed(3)),
+        budgetUsd: xBudget,
+        safeCapUsd: Number((xBudget * budgetSafetyRatio()).toFixed(2)),
+        credits: creditsCircuit.active ? "depleted" : "ok",
+      },
+      llm: {
+        spentUsd: Number((Number(openAIUsage?.totalEstimatedUsd) || 0).toFixed(3)),
+        budgetUsd: llmBudget,
+        calls: llmTotals.calls,
+        inputTokens: llmTotals.inputTokens,
+        outputTokens: llmTotals.outputTokens,
+      },
+    },
+    health: {
+      rss: { ok: rssOk, total: feedEntries.length },
+      xAuth: lastEvent?.category === "x_auth" ? "unavailable" : "ok",
+      lastEvent: lastEvent
+        ? { type: lastEvent.type || null, message: lastEvent.message || "", at: lastEvent.createdAt || null }
+        : null,
+    },
+    promo: promoSplit || null,
+    tasks,
+    charts: { postsDaily, spendDaily },
+  };
 }
 
 // ---------------------------------------------------------------------------

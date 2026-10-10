@@ -311,6 +311,7 @@ jobs:
           TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS: ${{ vars.TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS || '6' }}
           TWEET_LIVE_SNAPSHOT_METRICS_ENABLED: "false"
           DASHBOARD_DATA_FILE: .github/runtime/dashboard-data.json
+          PANEL_DATA_FILE: .github/runtime/panel-data.json
           GROWTH_REPORT_FILE: .github/runtime/growth-report.md
           DAILY_REPLY_FILE: .github/runtime/daily-replies.md
           TWEET_ANALYTICS_FILE: .github/runtime/tweet-analytics.json
@@ -325,8 +326,9 @@ jobs:
         if: success()
         env:
           DASHBOARD_DATA_FILE: .github/runtime/dashboard-data.json
+          PANEL_DATA_FILE: .github/runtime/panel-data.json
           DASHBOARD_SYNC_REPO: ${{ vars.DASHBOARD_SYNC_REPO || 'Linus-Shyu/Linus-Shyu.github.io' }}
-          DASHBOARD_SYNC_PATHS: ${{ vars.DASHBOARD_SYNC_PATHS || 'xbot-dashboard/data.json,docs/xbot-dashboard/data.json' }}
+          DASHBOARD_SYNC_PATHS: ${{ vars.DASHBOARD_SYNC_PATHS || 'xbot-dashboard/panel.json,docs/xbot-dashboard/panel.json' }}
           DASHBOARD_SYNC_REQUIRED: ${{ vars.DASHBOARD_SYNC_REQUIRED || 'false' }}
           DASHBOARD_SYNC_GITHUB_TOKEN: ${{ secrets.DASHBOARD_SYNC_GITHUB_TOKEN }}
           TWEET_SYNC_GITHUB_TOKEN: ${{ secrets.TWEET_SYNC_GITHUB_TOKEN }}

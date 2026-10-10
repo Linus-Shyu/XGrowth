@@ -1392,6 +1392,57 @@ function assertGrowthDecision(data) {
   assertDashboardVisibleTextClean("growthDecision", decision);
 }
 
+function assertLeanPanelData(data) {
+  if (!data || typeof data !== "object") fail("lean panel data root must be an object.");
+  if (data.version !== 2) fail("lean panel data must declare version 2.", String(data.version));
+  if (!Number.isFinite(Date.parse(data.updatedAt || ""))) fail("updatedAt is missing or invalid.", data.updatedAt || "<missing>");
+
+  if (!data.telemetry || typeof data.telemetry !== "object") fail("missing telemetry block.");
+  if (!["cached", "live"].includes(data.telemetry.source)) fail("telemetry.source must be cached or live.", String(data.telemetry.source));
+  if (data.telemetry.dataAgeMinutes != null && !Number.isFinite(number(data.telemetry.dataAgeMinutes))) {
+    fail("telemetry.dataAgeMinutes must be a number or null.");
+  }
+
+  if (!data.account || typeof data.account !== "object") fail("missing account block.");
+  if (data.account.followers != null && !Number.isFinite(number(data.account.followers))) fail("account.followers must be a number or null.");
+  if (!Number.isFinite(number(data.account.baselineScore))) fail("account.baselineScore must be numeric.");
+  if (!Number.isFinite(number(data.account.measuredPosts))) fail("account.measuredPosts must be numeric.");
+  if (!Number.isFinite(number(data.account.trackedPosts))) fail("account.trackedPosts must be numeric.");
+
+  if (data.posting != null) {
+    if (!Number.isFinite(Date.parse(data.posting.at || ""))) fail("posting.at is invalid.", data.posting.at || "<missing>");
+    if (!Number.isFinite(number(data.posting.hoursAgo))) fail("posting.hoursAgo must be numeric.");
+  }
+
+  if (!data.content || typeof data.content !== "object") fail("missing content block.");
+  if (!Array.isArray(data.content.topFormats) || data.content.topFormats.length > 4) fail("content.topFormats must be an array of at most 4.");
+  for (const item of data.content.topFormats) {
+    if (!item?.id || !Number.isFinite(number(item.avgScore)) || !Number.isFinite(number(item.count))) {
+      fail("content.topFormats entries need id/avgScore/count.", JSON.stringify(item));
+    }
+  }
+  if (data.content.bestPost != null && (!data.content.bestPost.text || !Number.isFinite(number(data.content.bestPost.score)))) {
+    fail("content.bestPost must carry text and score.", JSON.stringify(data.content.bestPost));
+  }
+
+  if (!data.budget || typeof data.budget !== "object") fail("missing budget block.");
+  if (number(data.budget.xApi?.spentUsd) < 0) fail("budget.xApi.spentUsd must be non-negative.");
+  if (number(data.budget.llm?.spentUsd) < 0) fail("budget.llm.spentUsd must be non-negative.");
+  if (!["ok", "depleted"].includes(data.budget.xApi?.credits)) fail("budget.xApi.credits must be ok or depleted.", String(data.budget.xApi?.credits));
+  if (!Number.isFinite(number(data.budget.xApi?.budgetUsd))) fail("budget.xApi.budgetUsd must be numeric.");
+  if (!Number.isFinite(number(data.budget.llm?.budgetUsd))) fail("budget.llm.budgetUsd must be numeric.");
+  if (!Number.isFinite(number(data.budget.llm?.calls))) fail("budget.llm.calls must be numeric.");
+
+  if (!data.health || typeof data.health !== "object") fail("missing health block.");
+  if (!Number.isFinite(number(data.health.rss?.ok)) || !Number.isFinite(number(data.health.rss?.total))) fail("health.rss needs numeric ok/total.");
+  if (number(data.health.rss?.ok) > number(data.health.rss?.total)) fail("health.rss.ok cannot exceed total.");
+
+  if (data.tasks != null && (!Array.isArray(data.tasks) || data.tasks.length > 5)) fail("tasks must be an array of at most 5.");
+  if (!Array.isArray(data.charts?.postsDaily) || data.charts.postsDaily.length > 14) fail("charts.postsDaily must be an array of at most 14.");
+  if (!Array.isArray(data.charts?.spendDaily) || data.charts.spendDaily.length > 14) fail("charts.spendDaily must be an array of at most 14.");
+  if (data.promo != null && !Number.isFinite(number(data.promo.promoAvg))) fail("promo.promoAvg must be numeric when promo is present.");
+}
+
 function assertDashboardData(data) {
   if (!data || typeof data !== "object") fail("dashboard data root must be an object.");
   if (data.version == null) fail("missing version.");
@@ -2766,6 +2817,21 @@ function expectValidationFailure(label, data, expectedPattern) {
   throw new Error(`Self-test ${label} unexpectedly passed.`);
 }
 
+function expectLeanValidationFailure(label, data, expectedPattern) {
+  try {
+    assertLeanPanelData(data);
+  } catch (error) {
+    if (!(error instanceof DashboardValidationError)) throw error;
+    const text = `${error.message}\n${error.details || ""}`;
+    if (!expectedPattern.test(text)) {
+      throw new Error(`Self-test ${label} failed with unexpected error: ${text}`);
+    }
+    console.log(`Lean panel validator self-test rejected ${label}.`);
+    return;
+  }
+  throw new Error(`Self-test ${label} unexpectedly passed.`);
+}
+
 function runSelfTest() {
   const good = validFixture();
   assertDashboardData(good);
@@ -2886,6 +2952,44 @@ function runSelfTest() {
   activeFaultGateDrift.api.statusTriage.incidents[0].severity = "danger";
   expectValidationFailure("active HTTP fault read gate", activeFaultGateDrift, /read gate/i);
 
+  const leanGood = {
+    version: 2,
+    updatedAt: new Date().toISOString(),
+    telemetry: { source: "cached", reason: null, dataAgeMinutes: 12, metricsCheckedAt: null, followersCheckedAt: null },
+    account: { followers: 92, delta: 6, deltaDays: 18.8, baselineScore: 87.3, measuredPosts: 21, trackedPosts: 40 },
+    posting: { at: new Date().toISOString(), url: "https://x.com/i/web/status/1", text: "x", hoursAgo: 1.2 },
+    content: {
+      topFormats: [{ id: "decision_rule", avgScore: 90.1, count: 4 }],
+      topTags: [],
+      bestPost: { text: "x", url: "https://x.com/i/web/status/1", score: 90.1, templateId: "decision_rule" },
+    },
+    budget: {
+      xApi: { spentUsd: 0.5, budgetUsd: 5, safeCapUsd: 4.25, credits: "ok" },
+      llm: { spentUsd: 0.01, budgetUsd: 0, calls: 3, inputTokens: 100, outputTokens: 50 },
+    },
+    health: { rss: { ok: 5, total: 6 }, xAuth: "ok", lastEvent: null },
+    promo: null,
+    tasks: [],
+    charts: {
+      postsDaily: [{ day: "10-10", posts: 1 }],
+      spendDaily: [{ day: "10-10", xApiUsd: 0.015, llmUsd: 0 }],
+    },
+  };
+  assertLeanPanelData(clone(leanGood));
+
+  const leanNoBudget = clone(leanGood);
+  delete leanNoBudget.budget;
+  expectLeanValidationFailure("lean missing budget", leanNoBudget, /missing budget block/i);
+
+  const leanNegativeSpend = clone(leanGood);
+  leanNegativeSpend.budget.xApi.spentUsd = -1;
+  expectLeanValidationFailure("lean negative spend", leanNegativeSpend, /non-negative/i);
+
+  const leanWrongVersion = clone(leanGood);
+  leanWrongVersion.version = 1;
+  expectLeanValidationFailure("lean wrong version", leanWrongVersion, /version 2/i);
+
+  console.log("Lean panel contract self-test passed.");
   console.log("Dashboard data validator self-test passed.");
 }
 
@@ -2894,8 +2998,17 @@ try {
     runSelfTest();
   } else {
     const data = readDashboardData(file);
-    assertDashboardData(data);
-    console.log(`Dashboard data validation passed: ${file}`);
+    if (Number(data?.version) === 2) {
+      const sizeBytes = fs.statSync(file).size;
+      if (sizeBytes > 300 * 1024) {
+        fail("lean panel payload exceeds 300 KB; the v2 contract must stay lean.", `${file} = ${sizeBytes} bytes`);
+      }
+      assertLeanPanelData(data);
+      console.log(`Lean panel data validation passed: ${file} (${sizeBytes} bytes)`);
+    } else {
+      assertDashboardData(data);
+      console.log(`Dashboard data validation passed: ${file}`);
+    }
   }
 } catch (error) {
   if (error instanceof DashboardValidationError) {

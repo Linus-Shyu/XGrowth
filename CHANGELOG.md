@@ -24,12 +24,14 @@ for public release tags.
   - Follower delta rows (`follower_delta`) in `growth-evolution.jsonl` + a report section; growth report now also compares "OSS promo vs organic" post performance.
 - LLM cost controls: `TWEET_STORY_VERDICT_MODE=auto` (skip AI story verdicts when images are off), `TWEET_PROMPT_LEAN_CONTEXT=true`, static-first prompt ordering for DeepSeek context-cache hits, `OPENAI_MAX_TOKENS`, tighter context defaults (`TWEET_CANDIDATE_COUNT=2`, `NEWS_MAX_ITEMS=3`, `TWEET_STORY_PICK_MAX=2`, history context cap `4`).
 - Weekly `self-tests` workflow; self-tests removed from the posting path to cut cold-start latency, and `setup-bun` pinned to `1.4.2`.
+- Lean v2 panel payload: `panel-data.json` (~3 KB) replaces the 1.8 MB dashboard JSON as the public panel source; auto-synced to `xbot-dashboard/panel.json`, validated by a v2 contract with a 300 KB size guard.
 
 ### Changed
 
 - `TWEET_AI_QUALITY_GATE_ENABLED` now defaults to `true` (one cheap call per run; falls back to the top local candidate when it rejects).
 - Draft reuse defaults extended (`TWEET_FOLLOWUP_DRAFT_REUSE_HOURS` / `TWEET_REPLY_DRAFT_REUSE_HOURS` 20 → 48), follow-up drafts capped at 1 per run, `TWEET_BUILD_IN_PUBLIC_RATIO` 0.35 → 0.55.
 - Story verdict budget: `TWEET_STORY_PICK_MAX` default 5 → 2; hybrid content kind is decided before spending AI verdict calls.
+- Dashboard sync now ships the lean `panel.json` payload (v2 contract) instead of the full v1 `data.json`.
 
 ### Fixed
 
