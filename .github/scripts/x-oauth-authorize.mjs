@@ -144,10 +144,14 @@ async function main() {
   console.log("在浏览器打开下面这个链接并完成授权:\n");
   console.log(authorizeLink);
   console.log(`\n等待回调: ${redirectUri}`);
+  console.log("\n⚠️  重要: 授权期间请保持本终端窗口开启, 不要关闭。");
+  console.log("如果跳转页面显示“无法连接”:");
+  console.log("  macOS: 检查 系统设置 → 网络 → 防火墙 → 选项, 允许 node 接收入站连接;");
+  console.log("  或者干脆换用粘贴模式: bash .github/scripts/authorize-x.sh --paste\n");
 
   if (process.platform === "darwin") {
     spawn("open", [authorizeLink], { stdio: "ignore", detached: true }).unref();
-    console.log("\n已在默认浏览器打开授权页（macOS）。");
+    console.log("已在默认浏览器打开授权页（macOS）。");
   }
 
   const tokenData = await new Promise((resolve, reject) => {
@@ -223,7 +227,14 @@ async function main() {
     server.on("error", (error) => {
       if (!settled) {
         settled = true;
-        reject(error);
+        const code = error && typeof error === "object" ? error.code : "";
+        const hint =
+          code === "EADDRINUSE"
+            ? `端口 ${port} 被占用。改用: bash .github/scripts/authorize-x.sh --paste(粘贴模式不需要端口)。`
+            : code === "EACCES"
+              ? `端口 ${port} 被防火墙/权限拦截。允许 node 入站连接, 或改用 --paste 模式。`
+              : "";
+        reject(new Error(`${error instanceof Error ? error.message : String(error)} ${hint}`.trim()));
       }
     });
 
@@ -231,7 +242,7 @@ async function main() {
       if (!settled) {
         settled = true;
         server.close();
-        reject(new Error("等待授权超时（10 分钟）。"));
+        reject(new Error("等待授权超时（10 分钟）。请重新运行脚本。"));
       }
     }, 10 * 60 * 1000);
   });

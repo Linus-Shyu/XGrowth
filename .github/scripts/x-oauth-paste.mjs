@@ -134,19 +134,25 @@ async function main() {
   console.log("\n2. 授权完成后浏览器会跳转到 http://localhost:3000 并显示“无法连接”(这是正常的)。");
   console.log("   复制浏览器地址栏里的【完整 URL】(以 http://localhost:3000/?code=... 开头)。\n");
 
-  const pasted = await readLine("3. 把完整 URL 粘贴到这里后回车: ");
+  const pasted = (await readLine("3. 把完整 URL(或 URL 里 code= 后面的那串码)粘贴到这里后回车: ")).trim();
 
-  const callback = parseCallbackUrl(pasted);
-  if (callback.error) {
-    throw new Error(
-      `Authorization denied: ${callback.error}${callback.errorDescription ? ` (${callback.errorDescription})` : ""}`,
-    );
+  let callback;
+  if (/^https?:\/\//i.test(pasted)) {
+    callback = parseCallbackUrl(pasted);
+    if (callback.error) {
+      throw new Error(
+        `Authorization denied: ${callback.error}${callback.errorDescription ? ` (${callback.errorDescription})` : ""}`,
+      );
+    }
+    if (callback.state && callback.state !== state) {
+      throw new Error("state 不匹配, 请重新运行本脚本再试一次。");
+    }
+  } else {
+    // 直接粘贴 code 本身(跳转页里 code= 后面的部分)
+    callback = { code: pasted.split(/[&=]/).pop() || "", state: null, error: null };
   }
   if (!callback.code) {
-    throw new Error("粘贴的 URL 里没有 code 参数。请复制地址栏完整 URL, 而不是页面正文。");
-  }
-  if (callback.state !== state) {
-    throw new Error("state 不匹配, 请重新运行本脚本再试一次。");
+    throw new Error("没有拿到 code。请复制跳转页地址栏里 code= 后面的那串字符(不含 &state 部分)。");
   }
 
   const data = await exchangeAuthorizationCode({
