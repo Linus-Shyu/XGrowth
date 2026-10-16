@@ -244,6 +244,7 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `TWEET_AI_QUALITY_GATE_ENABLED` | `true` | One cheap final fact-check per post; safe fallback when it rejects |
 | `TWEET_BUILD_IN_PUBLIC_RATIO` | `0.55` | First-party content beats news commentary for small accounts |
 | `TWEET_FOLLOWUP_DRAFT_REUSE_HOURS` / `TWEET_REPLY_DRAFT_REUSE_HOURS` | `48` | Fewer draft regenerations |
+| `OPENAI_COST_INPUT_1K_USD` / `OPENAI_COST_OUTPUT_1K_USD` | `0.00015` / `0.0006` | DeepSeek V4.1-Flash off-peak per-1K prices (set as repo variables so the $1 LLM cap can enforce) |
 | `TWEET_AUTO_THREAD_ENABLED` | `true` | Weekly: continue the best post with one reply-to-self (score ≥ baseline × 1.15) |
 | `TWEET_PREDICTION_RECEIPTS_ENABLED` | `true` | Weekly: post a receipt only when news confirms/refutes a prediction |
 | `TWEET_PLATFORM_VARIANTS_ENABLED` | `true` | Weekly: rewrite the best post for LinkedIn / Jike / Zhihu |
