@@ -8873,7 +8873,7 @@ function buildGrowthCadenceController({
     ? Math.max(0, (safeNowMs - lastPostMs) / 36e5)
     : null;
   const telemetry = cadenceTelemetryAgeMinutes(state || emptyTweetAnalyticsState(), now);
-  const maxTelemetryAgeHours = numberEnv("TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS", 36, 1, 24 * 14);
+  const maxTelemetryAgeHours = numberEnv("TWEET_CADENCE_MAX_TELEMETRY_AGE_HOURS", 96, 1, 24 * 14);
   const telemetryFresh =
     telemetry.ageMinutes == null || telemetry.ageMinutes <= maxTelemetryAgeHours * 60;
   const experimentSlots = Number(experimentPlan?.budgetSafeSlots);
@@ -23062,7 +23062,7 @@ function autoThreadCandidates(state, insights) {
   if (!autoThreadEnabled()) return [];
   const minAgeHours = numberEnv("TWEET_AUTO_THREAD_MIN_AGE_HOURS", 6, 1, 168);
   const maxAgeHours = numberEnv("TWEET_AUTO_THREAD_MAX_AGE_HOURS", 96, 12, 720);
-  const minScoreMultiplier = numberEnv("TWEET_AUTO_THREAD_MIN_SCORE_MULTIPLIER", 1.5, 0.5, 10);
+  const minScoreMultiplier = numberEnv("TWEET_AUTO_THREAD_MIN_SCORE_MULTIPLIER", 1.15, 0.5, 10);
   const baseline = insights.baselineScore || 0;
   return (state.tweets || [])
     .filter((record) => {

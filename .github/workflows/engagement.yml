@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   # Enable after secrets are set (each run spends ~$0.115 in X API):
   # schedule:
-  #   # Mon/Wed/Fri 14:30 UTC: between the 13:00 and 16:00 posting windows so
+  #   # Mon-Fri 14:30 UTC: between the 13:00 and 16:00 posting windows so
   #   # engagement never races the posting workflow for the X refresh token.
-  #   - cron: "30 14 * * 1,3,5"
+  #   - cron: "30 14 * * 1-5"
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       OPENAI_THINKING_ENABLED: ${{ vars.OPENAI_THINKING_ENABLED || 'false' }}
       OPENAI_USAGE_TRACKING_ENABLED: ${{ vars.OPENAI_USAGE_TRACKING_ENABLED || 'true' }}
       OPENAI_USAGE_FILE: .github/runtime/openai-usage.json
-      OPENAI_MONTHLY_BUDGET_USD: ${{ vars.OPENAI_MONTHLY_BUDGET_USD || '0' }}
+      OPENAI_MONTHLY_BUDGET_USD: ${{ vars.OPENAI_MONTHLY_BUDGET_USD || '1' }}
       OPENAI_BUDGET_SAFETY_RATIO: ${{ vars.OPENAI_BUDGET_SAFETY_RATIO || '0.9' }}
       OPENAI_COST_INPUT_1K_USD: ${{ vars.OPENAI_COST_INPUT_1K_USD || '0' }}
       OPENAI_COST_OUTPUT_1K_USD: ${{ vars.OPENAI_COST_OUTPUT_1K_USD || '0' }}

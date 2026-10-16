@@ -228,8 +228,8 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `X_API_BUDGET_SAFETY_RATIO` | `0.85` | Leave headroom under the $5 cap |
 | `TWEET_WEEKLY_CONTROL_FORMAT_ID` | `decision_rule` | Fixed weekly control arm |
 | `TWEET_FOLLOWERS_OVERRIDE` | `86` | Free active-conn correction |
-| `TWEET_CONTENT_FORMAT_IDS` | `prediction,decision_rule,brutal_truth,sharp_question` | Match measured winners |
-| `TWEET_FORMAT_BASE_ALLOCATION` | `0.65 / 0.20 / 0.12 / 0.03` | Stable mix, not vibes |
+| `TWEET_CONTENT_FORMAT_IDS` | `myth_busting,brutal_truth,decision_rule,prediction,the_hard_way` | Pool aligned with measured winners |
+| `TWEET_FORMAT_BASE_ALLOCATION` | `myth_busting .45 / brutal_truth .25 / decision_rule .15 / prediction .10 / the_hard_way .05` | Matches measured scores (prediction measured worst, dropped to .10) |
 | `TWEET_GROWTH_MIN_SAMPLES` | `10` | Stop fake “self-evolution” |
 | `TWEET_IMAGE_ENABLED` | `false` | No image spend until ROI exists |
 | `TWEET_AUTO_REPLY_*` | off / 0 | Credits go to posts + metrics |
@@ -244,7 +244,7 @@ If credits return `402`, the dashboard forces available remaining to `$0` and th
 | `TWEET_AI_QUALITY_GATE_ENABLED` | `true` | One cheap final fact-check per post; safe fallback when it rejects |
 | `TWEET_BUILD_IN_PUBLIC_RATIO` | `0.55` | First-party content beats news commentary for small accounts |
 | `TWEET_FOLLOWUP_DRAFT_REUSE_HOURS` / `TWEET_REPLY_DRAFT_REUSE_HOURS` | `48` | Fewer draft regenerations |
-| `TWEET_AUTO_THREAD_ENABLED` | `true` | Weekly: continue the best post with one reply-to-self |
+| `TWEET_AUTO_THREAD_ENABLED` | `true` | Weekly: continue the best post with one reply-to-self (score ≥ baseline × 1.15) |
 | `TWEET_PREDICTION_RECEIPTS_ENABLED` | `true` | Weekly: post a receipt only when news confirms/refutes a prediction |
 | `TWEET_PLATFORM_VARIANTS_ENABLED` | `true` | Weekly: rewrite the best post for LinkedIn / Jike / Zhihu |
 | `PANEL_DATA_FILE` | `.github/runtime/panel-data.json` | Lean v2 panel payload (~3 KB) written every maintenance run |
@@ -258,7 +258,7 @@ The posting loop wins reach; these optional loops win distribution:
 
 | Lever | Where | Cost | Notes |
 |---|---|---|---|
-| Reply game | `engagement` workflow (Mon/Wed/Fri) | ~$0.115/run | One whitelist quote per run — cheapest impressions at small-follower scale |
+| Reply game | `engagement` workflow (Mon–Fri 14:30 UTC) | ~$0.115/run | One whitelist quote per run — cheapest impressions at small-follower scale |
 | First-party feed | `sync-github-events.mjs` | $0 | Your commits / merged PRs / releases / stars become build-in-public notes |
 | Thread continuation | weekly `metrics_report` | ~$0.03/week | Extends the best post (score ≥ baseline × 1.5), boosts dwell |
 | Prediction receipts | weekly `metrics_report` | ~$0.03/week | Posts only when news clearly confirms/refutes the prediction |
