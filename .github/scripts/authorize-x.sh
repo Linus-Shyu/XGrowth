@@ -42,4 +42,11 @@ EOF
   exit 1
 fi
 
+# 粘贴模式: 不需要本地 HTTP 服务器。浏览器授权后跳转到 localhost:3000
+# 显示“无法连接”是正常的, 把地址栏完整 URL 复制回终端即可。
+if [[ "${1:-}" == "--paste" ]]; then
+  node .github/scripts/x-oauth-paste.mjs
+  exit 0
+fi
+
 node .github/scripts/x-oauth-authorize.mjs
