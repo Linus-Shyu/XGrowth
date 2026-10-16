@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   # Enable after secrets are set (each run spends ~$0.115 in X API):
   # schedule:
-  #   # Mon/Wed/Fri 13:10 UTC: right after the US East morning post.
-  #   - cron: "10 13 * * 1,3,5"
+  #   # Mon/Wed/Fri 14:30 UTC: between the 13:00 and 16:00 posting windows so
+  #   # engagement never races the posting workflow for the X refresh token.
+  #   - cron: "30 14 * * 1,3,5"
 
 permissions:
   contents: write
@@ -99,13 +100,38 @@ jobs:
       - name: Sync GitHub events into build-in-public notes
         run: node .github/scripts/sync-github-events.mjs
 
+      - name: Purge invalidated OAuth runtime cache
+        if: hashFiles('.github/runtime/x-refresh-token.invalid.json') != ''
+        run: |
+          bash .github/scripts/purge-actions-cache.sh
+          rm -f .github/runtime/x-refresh-token.txt \
+                .github/runtime/x-access-token.json \
+                .github/runtime/x-refresh-token.invalid.json
+          echo "Cleared invalidated OAuth runtime files."
+
       - name: Setup bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: 1.4.2
 
       - name: Run whitelist engagement
+        id: engagement
         run: bun .github/scripts/post-tweet.mjs
+
+      - name: Purge stale runtime cache after OAuth failure
+        if: always() && steps.engagement.outputs.purge_runtime_cache == 'true'
+        env:
+          ENGAGEMENT_OUTCOME: ${{ steps.engagement.outcome }}
+        run: |
+          bash .github/scripts/purge-actions-cache.sh
+          if [ "$ENGAGEMENT_OUTCOME" = "success" ]; then
+            rm -f .github/runtime/x-refresh-token.invalid.json
+            echo "Purged stale remote runtime caches; keeping any fresh local runtime token files."
+          else
+            rm -f .github/runtime/x-refresh-token.txt \
+                  .github/runtime/x-access-token.json \
+                  .github/runtime/x-refresh-token.invalid.json
+          fi
 
       - name: Commit new build-in-public notes
         shell: bash
