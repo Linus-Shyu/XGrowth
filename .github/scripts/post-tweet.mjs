@@ -23656,13 +23656,25 @@ async function runEngagementMaintenance() {
     return;
   }
 
-  const accessToken = await getXAccessTokenWithFallback();
-  await runAutoReplies(accessToken);
-  await recordRunEvent("engagement", "engagement maintenance complete", {
-    category: "publish",
-    projectedCost,
-  });
-  console.log("Engagement maintenance complete.");
+  try {
+    const accessToken = await getXAccessTokenWithFallback();
+    await runAutoReplies(accessToken);
+    await recordRunEvent("engagement", "engagement maintenance complete", {
+      category: "publish",
+      projectedCost,
+    });
+    console.log("Engagement maintenance complete.");
+  } catch (error) {
+    // Engagement is a nice-to-have distribution loop; the posting pipeline is
+    // the core. Soft-fail here so a token/API hiccup doesn't alarm the whole
+    // repo — the event is still recorded for the growth report.
+    const message = error instanceof Error ? error.message : String(error);
+    await recordRunEvent("engagement_degraded", message, {
+      category: "x_auth",
+      projectedCost,
+    });
+    console.warn(`Engagement degraded (soft failure; posting loop unaffected): ${message}`);
+  }
 }
 
 async function runGrowthMaintenance() {
