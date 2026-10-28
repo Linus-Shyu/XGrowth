@@ -21052,6 +21052,16 @@ async function composeTweet({
       "This is today's featured image post for the highest-value story. Take a sharper or fresher angle if needed, but stay on the selected story only.",
     );
   }
+  const avoidTexts = optionalEnv("TWEET_AVOID_TEXTS");
+  if (avoidTexts) {
+    promptParts.push(
+      [
+        "HARD CONSTRAINT — X just rejected the following text as duplicate content.",
+        "Write something clearly different: different hook, different angle, different wording.",
+        `Rejected text (do not repeat or closely paraphrase): ${avoidTexts}`,
+      ].join("\n"),
+    );
+  }
   if (!promptLeanContextEnabled()) {
     promptParts.push(formatCachedGenerationPolicyContext(cachedGenerationPolicy));
   }
@@ -21147,12 +21157,25 @@ async function composeTweet({
   if (!candidates.length) {
     throw new Error("OpenAI returned no usable tweet candidates");
   }
-  const selectedCandidate = await selectQualityApprovedCandidate(candidates, {
+
+  // Local anti-duplicate gate: X hard-rejects near-duplicate posts with a 403,
+  // so deprioritize candidates too similar to anything recently posted.
+  const recentForDedupe = (history || []).slice(0, 12);
+  const dedupeBlocked = candidates.filter((candidate) =>
+    isNearDuplicateWithHistory(candidate.text, recentForDedupe),
+  );
+  for (const blocked of dedupeBlocked) {
+    console.log(`Anti-duplicate gate blocked ${blocked.templateId}: too similar to a recent post.`);
+  }
+  const dedupedCandidates = candidates.filter((candidate) => !dedupeBlocked.includes(candidate));
+  const selectableCandidates = dedupedCandidates.length ? dedupedCandidates : candidates;
+
+  const selectedCandidate = await selectQualityApprovedCandidate(selectableCandidates, {
     story,
     language,
     growthStrategy,
   });
-  logTweetCandidates(candidates, selectedCandidate);
+  logTweetCandidates(selectableCandidates, selectedCandidate);
 
   const promotedText = maybeAppendOpenSourcePromo(selectedCandidate.text, {
     score: selectedCandidate.score,
@@ -23457,6 +23480,31 @@ async function lastArchivePost() {
   return null;
 }
 
+function dedupeTokens(value) {
+  return [
+    ...new Set(
+      String(value || "")
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/#[\p{L}\p{N}_-]+/gu, "")
+        .match(/[\p{Script=Han}]|[a-z0-9][a-z0-9+._-]*/gu) || [],
+    ),
+  ].filter((token) => token.length > 2 || /[\p{Script=Han}]/u.test(token));
+}
+
+function isNearDuplicateWithHistory(text, recent) {
+  const tokens = dedupeTokens(text);
+  if (tokens.length < 6) return false;
+  for (const past of recent || []) {
+    const pastTokens = dedupeTokens(past);
+    if (pastTokens.length < 6) continue;
+    const intersection = tokens.filter((token) => pastTokens.includes(token)).length;
+    const union = new Set([...tokens, ...pastTokens]).size;
+    if (union > 0 && intersection / union > 0.6) return true;
+  }
+  return false;
+}
+
 function leanPanelTopBuckets(buckets, limit, minSamples = 1) {
   return Object.entries(buckets || {})
     .filter(([, bucket]) => (Number(bucket?.count) || 0) >= minSamples)
@@ -24079,7 +24127,40 @@ async function main() {
       });
       return;
     }
-    throw error;
+    // X rejects near-duplicate posts with a 403. Recover once by regenerating
+    // with the rejected text passed as an explicit anti-duplicate constraint.
+    if (/duplicate content/i.test(message) && composeInput) {
+      console.warn(`X rejected the post as duplicate content; regenerating once: ${message}`);
+      const previousAvoid = process.env.TWEET_AVOID_TEXTS;
+      process.env.TWEET_AVOID_TEXTS = tweet;
+      try {
+        const regenerated = await composeTweet(composeInput);
+        if (regenerated.tweet && regenerated.tweet !== tweet) {
+          console.log(`Regenerated after duplicate rejection (${countCharacters(regenerated.tweet)} chars): ${regenerated.tweet}`);
+          tweet = regenerated.tweet;
+          selectedStory = regenerated.selectedStory;
+          language = regenerated.language;
+          imageContext = regenerated.imageContext;
+          selectedCandidate = regenerated.selectedCandidate;
+          generationDecisionTrace = regenerated.generationDecisionTrace;
+          ({ result, mediaId, accessToken } = await publishTweetWithFallback(
+            tweet,
+            imageContext,
+            imagePlan,
+          ));
+          await recordRunEvent("duplicate_recovered", "regenerated after X duplicate-content rejection", {
+            category: "publish",
+          });
+        } else {
+          throw new Error("Regeneration after duplicate rejection produced no fresh text.");
+        }
+      } finally {
+        if (previousAvoid === undefined) delete process.env.TWEET_AVOID_TEXTS;
+        else process.env.TWEET_AVOID_TEXTS = previousAvoid;
+      }
+    } else {
+      throw error;
+    }
   }
   const tweetId = result?.data?.id || null;
 
