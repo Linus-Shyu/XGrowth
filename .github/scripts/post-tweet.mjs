@@ -6361,7 +6361,24 @@ async function runAutoReplies(accessToken) {
     return;
   }
 
-  const account = await fetchAccountSnapshot(accessToken);
+  // Reuse a fresh cached account snapshot instead of paying a USER_ME read on
+  // every daily run; the snapshot TTL is the freshness bound.
+  const stateBefore = await readTweetAnalytics();
+  const latestSnapshot = latestAccountSnapshot(stateBefore);
+  const snapshotAgeHours = accountSnapshotAgeHours(stateBefore);
+  const maxSnapshotAgeHours = numberEnv("TWEET_ACCOUNT_SNAPSHOT_MAX_AGE_HOURS", 24, 0, 168);
+  let account;
+  if (
+    latestSnapshot?.username &&
+    latestSnapshot?.source !== "operator_confirmed" &&
+    snapshotAgeHours != null &&
+    (maxSnapshotAgeHours <= 0 || snapshotAgeHours < maxSnapshotAgeHours)
+  ) {
+    account = latestSnapshot;
+    console.log(`Reusing fresh account snapshot (${snapshotAgeHours.toFixed(1)}h old); skipping USER_ME read.`);
+  } else {
+    account = await fetchAccountSnapshot(accessToken);
+  }
   const state = await readTweetAnalytics();
   const maxPerDay = integerEnv("TWEET_AUTO_REPLY_MAX_PER_DAY", 1, 0, 20);
   const maxPerRun = integerEnv("TWEET_AUTO_REPLY_MAX_PER_RUN", 1, 0, 10);
@@ -23539,7 +23556,13 @@ function buildLeanPanelData({
   const profile = dashboardData?.profile || {};
   const telemetry = dashboardData?.telemetry || {};
 
-  const tasks = (Array.isArray(dashboardData?.operatorTasks) ? dashboardData.operatorTasks : [])
+  const rawOperatorTasks = dashboardData?.operatorTasks;
+  const operatorTaskList = Array.isArray(rawOperatorTasks?.tasks)
+    ? rawOperatorTasks.tasks
+    : Array.isArray(rawOperatorTasks)
+      ? rawOperatorTasks
+      : [];
+  const tasks = operatorTaskList
     .filter((task) => task?.id !== "ops-banner-check" || Boolean(task.openUrl))
     .slice(0, 5)
     .map((task) => ({
