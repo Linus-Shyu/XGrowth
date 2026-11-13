@@ -61,11 +61,6 @@ jobs:
       TWEET_ANALYTICS_FILE: .github/runtime/tweet-analytics.json
       TWEET_ARCHIVE_FILE: archive/tweets.jsonl
       TWEET_BUILD_IN_PUBLIC_FILE: .github/content/build-in-public.jsonl
-      GITHUB_EVENTS_SYNC_FILE: .github/runtime/github-events-sync.json
-      GITHUB_EVENTS_OWNER: ${{ vars.GITHUB_EVENTS_OWNER || 'Linus-Shyu' }}
-      GITHUB_EVENTS_EXCLUDE_REPOS: ${{ vars.GITHUB_EVENTS_EXCLUDE_REPOS || 'x_bot' }}
-      GITHUB_EVENTS_MAX_AGE_DAYS: ${{ vars.GITHUB_EVENTS_MAX_AGE_DAYS || '4' }}
-      GITHUB_EVENTS_LIMIT: ${{ vars.GITHUB_EVENTS_LIMIT || '8' }}
       GITHUB_TOKEN: ${{ github.token }}
 
     steps:
@@ -112,9 +107,6 @@ jobs:
               echo "Injected cached X refresh token."
             fi
           fi
-
-      - name: Sync GitHub events into build-in-public notes
-        run: node .github/scripts/sync-github-events.mjs
 
       - name: Purge invalidated OAuth runtime cache
         if: hashFiles('.github/runtime/x-refresh-token.invalid.json') != ''
