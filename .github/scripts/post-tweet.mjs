@@ -2158,9 +2158,9 @@ function ensureTweetHashtags(text, story, language = null, performanceInsights =
     .slice(0, targetCount)
     .join(" ");
   const body = trimmed.replace(/(?:^|\s)#[\p{L}\p{N}_]+/gu, "").trim();
-  const maxBodyLength = MAX_TWEET_LENGTH - countCharacters(tagLine) - 1;
+  const maxBodyLength = MAX_TWEET_LENGTH - xWeightedLength(tagLine) - 1;
   const safeBody =
-    countCharacters(body) > maxBodyLength
+    xWeightedLength(body) > maxBodyLength
       ? Array.from(body).slice(0, Math.max(0, maxBodyLength - 1)).join("").trimEnd() + "…"
       : body;
   return trimTweet(`${safeBody}\n${tagLine}`);
@@ -2206,10 +2206,10 @@ function maybeAppendOpenSourcePromo(text, { score = null, language = null, seed 
   if (/https?:\/\/|github\.com\//i.test(trimmed)) return trimmed;
 
   const suffix = `\n${promo}`;
-  const maxBody = MAX_TWEET_LENGTH - countCharacters(suffix);
+  const maxBody = MAX_TWEET_LENGTH - xWeightedLength(suffix);
   if (maxBody < 40) return trimmed;
   const body =
-    countCharacters(trimmed) > maxBody
+    xWeightedLength(trimmed) > maxBody
       ? `${Array.from(trimmed).slice(0, Math.max(0, maxBody - 1)).join("").trimEnd()}…`
       : trimmed;
   return `${body}${suffix}`;
@@ -6267,7 +6267,7 @@ function cleanReplyText(text) {
 function replyQualityIssue(text) {
   const value = String(text || "").trim();
   if (!value) return "empty";
-  if (countCharacters(value) > 240) return "too_long";
+  if (xWeightedLength(value) > 240) return "too_long";
   if (/https?:\/\//i.test(value)) return "contains_url";
   if (/(^|\s)#[\p{L}\p{N}_]+/u.test(value)) return "contains_hashtag";
   if (/(thanks for sharing|great point|interesting|love this|as an ai|i think this is)/i.test(value)) {
@@ -18151,6 +18151,15 @@ function countCharacters(text) {
   return Array.from(text).length;
 }
 
+function xWeightedLength(text) {
+  // X counts each URL as 23 characters (t.co) and each astral emoji as 2
+  // (UTF-16 surrogate pair). JS string .length already counts UTF-16 units,
+  // so only URLs need the placeholder swap to match X's post-length rules.
+  return String(text || "")
+    .replace(/https?:\/\/\S+/g, "x".repeat(23))
+    .length;
+}
+
 function normalizeTweetPunctuation(text) {
   const lastPeriodIndex = text.lastIndexOf("。");
   if (lastPeriodIndex < 0) return text;
@@ -18176,7 +18185,7 @@ function trimTweet(text) {
     ),
   );
 
-  if (countCharacters(normalized) <= MAX_TWEET_LENGTH) {
+  if (xWeightedLength(normalized) <= MAX_TWEET_LENGTH) {
     return normalized;
   }
 
@@ -20491,7 +20500,7 @@ function qualityGateEnabled() {
 function qualityIssuesForTweet(text, story, growthStrategy = null, language = null) {
   const issues = [];
   const trimmed = String(text || "").trim();
-  if (countCharacters(trimmed) > MAX_TWEET_LENGTH) issues.push({ severity: "block", reason: "too_long" });
+  if (xWeightedLength(trimmed) > MAX_TWEET_LENGTH) issues.push({ severity: "block", reason: "too_long" });
   if (/https?:\/\//i.test(trimmed)) issues.push({ severity: "block", reason: "contains_url" });
   if (formulaicGrowthTemplateOpening(trimmed)) {
     issues.push({ severity: "block", reason: "formulaic_growth_template" });
@@ -21645,7 +21654,7 @@ async function runLocalFallbackSelfTest() {
   assertSelfTest(selectedCandidate.generationSource === "local_cached_policy", "selected candidate is not local fallback", {
     generationSource: selectedCandidate.generationSource,
   });
-  assertSelfTest(countCharacters(selectedCandidate.text) <= MAX_TWEET_LENGTH, "selected candidate exceeds X length", {
+  assertSelfTest(xWeightedLength(selectedCandidate.text) <= MAX_TWEET_LENGTH, "selected candidate exceeds X length", {
     chars: countCharacters(selectedCandidate.text),
   });
   assertSelfTest(!/https?:\/\//i.test(selectedCandidate.text), "selected candidate contains URL", selectedCandidate.text);
@@ -24109,6 +24118,20 @@ async function main() {
     return;
   }
 
+  // Final X-weighted length guard: local countCharacters uses code points, but
+  // X charges 2 per astral emoji and 23 per URL, so a 280-code-point tweet can
+  // still be rejected. Trim defensively right before publish.
+  if (xWeightedLength(tweet) > MAX_TWEET_LENGTH) {
+    const trimmedTweet =
+      Array.from(tweet).slice(0, MAX_TWEET_LENGTH - 1).join("").trimEnd() + "…";
+    console.warn(`Tweet exceeds X-weighted 280 (${xWeightedLength(tweet)}); trimming to ${xWeightedLength(trimmedTweet)}.`);
+    tweet = trimmedTweet;
+    if (selectedCandidate) selectedCandidate.text = trimmedTweet;
+    await recordRunEvent("length_trimmed", "tweet trimmed to X-weighted 280 before publish", {
+      category: "publish",
+    });
+  }
+
   let result;
   let mediaId;
   let accessToken;
@@ -24127,9 +24150,9 @@ async function main() {
       });
       return;
     }
-    // X rejects near-duplicate posts with a 403. Recover once by regenerating
-    // with the rejected text passed as an explicit anti-duplicate constraint.
-    if (/duplicate content/i.test(message) && composeInput) {
+    // X rejects near-duplicate posts and over-length posts with a 403. Recover
+    // once by regenerating with the rejected text as an explicit constraint.
+    if (/duplicate content|longer than 280/i.test(message) && composeInput) {
       console.warn(`X rejected the post as duplicate content; regenerating once: ${message}`);
       const previousAvoid = process.env.TWEET_AVOID_TEXTS;
       process.env.TWEET_AVOID_TEXTS = tweet;
